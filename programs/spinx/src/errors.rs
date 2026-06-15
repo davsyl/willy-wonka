@@ -45,4 +45,8 @@ pub enum SpinxError {
     // ── Auth ──────────────────────────────────────────────────────────────────
     #[msg("Arithmetic overflow")]
     Overflow,
+
+    // ── Lobby ─────────────────────────────────────────────────────────────────
+    #[msg("Lobby has not yet expired and only the creator can cancel early")]
+    LobbyCannotBeCancelled,
 }

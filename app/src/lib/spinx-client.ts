@@ -274,6 +274,55 @@ export class SpinxClient {
     return this.program.account.lobby.fetch(pda) as any;
   }
 
+  // ── Leaderboard ─────────────────────────────────────────────────────────────
+
+  async fetchLeaderboard() {
+    const [pda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("leaderboard")],
+      this.program.programId
+    );
+    return this.program.account.leaderboard.fetch(pda);
+  }
+
+  async updateLeaderboard(playerKey = this.wallet): Promise<TransactionSignature> {
+    const [gameConfigPDA]  = gameConfigPda();
+    const [profilePda]     = playerProfilePda(playerKey);
+    const [leaderboardPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("leaderboard")],
+      this.program.programId
+    );
+    return this.program.methods
+      .updateLeaderboard()
+      .accounts({
+        playerProfile: profilePda,
+        leaderboard:   leaderboardPda,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+  }
+
+  // ── Lobby cancellation ───────────────────────────────────────────────────────
+
+  async cancelLobby(lobbyId: bigint): Promise<TransactionSignature> {
+    const gameConfig     = await this.fetchGameConfig();
+    const [lobbyPDA]     = lobbyPda(lobbyId);
+    const [escrowPDA]    = lobbyEscrowPda(lobbyId);
+    const creatorSprkAta = getAssociatedTokenAddressSync(gameConfig.sprkMint, this.wallet);
+
+    return this.program.methods
+      .cancelLobby()
+      .accounts({
+        creator:         this.wallet,
+        lobby:           lobbyPDA,
+        lobbyEscrow:     escrowPDA,
+        creatorSprkAta,
+        sprkMint:        gameConfig.sprkMint,
+        tokenProgram:    TOKEN_PROGRAM_ID,
+        systemProgram:   SystemProgram.programId,
+      })
+      .rpc();
+  }
+
   async fetchOpenLobbies(): Promise<{ publicKey: PublicKey; account: LobbyAccount }[]> {
     const lobbies = await (this.program.account.lobby as any).all([
       {

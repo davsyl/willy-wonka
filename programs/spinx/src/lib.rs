@@ -71,4 +71,30 @@ pub mod spinx {
     pub fn resolve_battle(ctx: Context<ResolveBattle>) -> Result<()> {
         instructions::resolve_battle::handler(ctx)
     }
+
+    // ── Leaderboard ───────────────────────────────────────────────────────────
+
+    /// One-time: initialise the singleton leaderboard account.
+    pub fn initialize_leaderboard(ctx: Context<InitializeLeaderboard>) -> Result<()> {
+        instructions::initialize_leaderboard::handler(ctx)
+    }
+
+    /// Upsert a player's stats into the leaderboard.
+    pub fn update_leaderboard(ctx: Context<UpdateLeaderboard>) -> Result<()> {
+        instructions::update_leaderboard::handler(ctx)
+    }
+
+    // ── Lobby lifecycle ───────────────────────────────────────────────────────
+
+    /// Cancel a waiting lobby and refund the creator's escrow.
+    pub fn cancel_lobby(ctx: Context<CancelLobby>) -> Result<()> {
+        instructions::cancel_lobby::handler(ctx)
+    }
+
+    // ── NFT Minting ───────────────────────────────────────────────────────────
+
+    /// Mint an on-chain Metaplex NFT for an owned Core part.
+    pub fn mint_core_nft(ctx: Context<MintCoreNft>, core_id: u16) -> Result<()> {
+        instructions::mint_core_nft::handler(ctx, core_id)
+    }
 }

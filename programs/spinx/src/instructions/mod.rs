@@ -5,6 +5,10 @@ pub mod assemble_spinx;
 pub mod create_lobby;
 pub mod join_lobby;
 pub mod resolve_battle;
+pub mod initialize_leaderboard;
+pub mod update_leaderboard;
+pub mod cancel_lobby;
+pub mod mint_core_nft;
 
 pub use initialize_game::*;
 pub use initialize_player::*;
@@ -13,3 +17,7 @@ pub use assemble_spinx::*;
 pub use create_lobby::*;
 pub use join_lobby::*;
 pub use resolve_battle::*;
+pub use initialize_leaderboard::*;
+pub use update_leaderboard::*;
+pub use cancel_lobby::*;
+pub use mint_core_nft::*;

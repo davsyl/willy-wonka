@@ -45,3 +45,9 @@ pub const SEED_SPINX: &[u8] = b"spinx";
 pub const SEED_LOBBY: &[u8] = b"lobby";
 pub const SEED_SPRK_VAULT: &[u8] = b"sprk_vault";
 pub const SEED_LOBBY_ESCROW: &[u8] = b"lobby_escrow";
+pub const SEED_LEADERBOARD: &[u8] = b"leaderboard";
+
+// ─── Lobby ────────────────────────────────────────────────────────────────────
+
+/// Lobbies expire after this many seconds with no opponent.
+pub const LOBBY_EXPIRY_SECONDS: i64 = 300; // 5 minutes
