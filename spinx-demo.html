@@ -922,6 +922,9 @@ function runBattleAnimation(buildA, chargeA, buildB, chargeB, wager) {
   const frames = result.frames;
   // Use the true initial HP (before any damage) as the 100% reference.
   const maxStA = result.initStA;
+  let lastTimestamp = null;
+  let simAccum = 0;
+  const SIM_STEP_MS = 40; // advance one sim tick every 40 ms
   const maxStB = result.initStB;
 
   // Each top has its own continuously-advancing angle so they orbit independently.
@@ -932,7 +935,20 @@ function runBattleAnimation(buildA, chargeA, buildB, chargeB, wager) {
   const KO_TICKS = 30;
   let koTick = 0;  // counts up during knockout phase
 
-  function drawFrame() {
+  function drawFrame(timestamp) {
+    // ── Advance simulation at fixed 40 ms steps, render at display rate ───────
+    if (lastTimestamp !== null) {
+      simAccum += Math.min(timestamp - lastTimestamp, 100); // cap to handle tab sleep
+    }
+    lastTimestamp = timestamp;
+
+    while (simAccum >= SIM_STEP_MS) {
+      simAccum -= SIM_STEP_MS;
+      if (tick < frames.length) tick++;
+      else if (koTick < KO_TICKS) koTick++;
+      else { simAccum = 0; break; }
+    }
+
     // ── Phase 1: simulation frames ────────────────────────────────────────────
     const inSim = tick < frames.length;
     // ── Phase 2: knockout animation (loser spirals to centre) ─────────────────
@@ -944,7 +960,8 @@ function runBattleAnimation(buildA, chargeA, buildB, chargeB, wager) {
     }
 
     const f = inSim ? frames[tick] : frames[frames.length - 1];
-    const koProgress = inKO ? koTick / KO_TICKS : 0;
+    // +1 so the final KO frame (koTick=KO_TICKS-1) reaches progress=1.0, draining HP to 0.
+    const koProgress = inKO ? (koTick + 1) / KO_TICKS : 0;
 
     // KO or tiebreak loser: either top that reached 0, or (for time-limit draws)
     // whichever has lower remaining HP.
@@ -965,9 +982,10 @@ function runBattleAnimation(buildA, chargeA, buildB, chargeB, wager) {
     const healthOrbitA = R * 0.72 * (loserA && inKO ? Math.max(0, 1 - koProgress) : (baseRatioA > 0.25 ? 1 : baseRatioA / 0.25));
     const healthOrbitB = R * 0.72 * (loserB && inKO ? Math.max(0, 1 - koProgress) : (baseRatioB > 0.25 ? 1 : baseRatioB / 0.25));
 
-    // Angular speed: faster when healthy, wobbles when low hp
-    const baseSpeedA = 0.10 + 0.04 * ratioA;
-    const baseSpeedB = 0.09 + 0.04 * ratioB;
+    // Angular speed per rAF frame (≈16 ms). Scaled from the old 40 ms/frame rate
+    // (×16/40 = ×0.4) so orbit pace feels the same as before.
+    const baseSpeedA = (0.10 + 0.04 * ratioA) * 0.4;
+    const baseSpeedB = (0.09 + 0.04 * ratioB) * 0.4;
     angleA += baseSpeedA;
     angleB -= baseSpeedB; // opposite direction for visual contrast
 
@@ -1097,12 +1115,10 @@ function runBattleAnimation(buildA, chargeA, buildB, chargeB, wager) {
         <div class="battle-event">${f.evB||'&nbsp;'}</div>
       </div>`;
 
-    if (inSim) tick++;
-    else if (inKO) koTick++;
-    battleAnimTimer = setTimeout(drawFrame, 40);
+    battleAnimTimer = requestAnimationFrame(drawFrame);
   }
 
-  drawFrame();
+  battleAnimTimer = requestAnimationFrame(drawFrame);
 }
 
 function showBattleResult(winA, buildA, buildB, wager) {
@@ -1143,7 +1159,7 @@ function showBattleResult(winA, buildA, buildB, wager) {
 }
 
 function resetBattle() {
-  if (battleAnimTimer) clearTimeout(battleAnimTimer);
+  if (battleAnimTimer) cancelAnimationFrame(battleAnimTimer);
   document.getElementById('battle-setup').style.display = 'block';
   document.getElementById('battle-arena').style.display = 'none';
   const canvas = document.getElementById('battle-canvas');
