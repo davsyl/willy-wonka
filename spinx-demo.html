@@ -484,6 +484,12 @@ const MAX_WAGER            = 500;
 const BATTLE_TICKS         = 100;
 const OVERCHARGE_THRESHOLD = 85;
 const OVERCHARGE_PENALTY   = 2;
+// Stamina is multiplied by this factor internally so battles last the full
+// 100 ticks. Raw stat values sum to ~60-300; we want HP in the 1500-7500
+// range so damage (~20-200 per tick) gives 15-80 tick battles.
+const STAMINA_SCALE        = 25;
+// Damage divisor applied after the raw atk-def/2 formula.
+const DAMAGE_SCALE         = 8;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DATA TABLES — mirror programs/spinx/src/state/spinx.rs
@@ -587,7 +593,9 @@ function applyChargeToSpeed(base, charge) {
   const eff = Math.min(charge, OVERCHARGE_THRESHOLD);
   return base + Math.floor(base * eff / 200);
 }
-function computeDamage(atk, def) { return Math.max(1, atk - Math.floor(def / 2)); }
+function computeDamage(atk, def) {
+  return Math.max(1, Math.floor((atk - Math.floor(def / 2)) / DAMAGE_SCALE));
+}
 
 // Simple deterministic LCG seeded from timestamp
 function makePRNG(seed) {
@@ -599,8 +607,8 @@ function simulateBattle(buildA, chargeA, buildB, chargeB, seed) {
   const rng = makePRNG(seed);
   const statsA = buildA.stats, statsB = buildB.stats;
 
-  let stA = applyChargeToStamina(statsA.stamina, chargeA);
-  let stB = applyChargeToStamina(statsB.stamina, chargeB);
+  let stA = applyChargeToStamina(statsA.stamina * STAMINA_SCALE, chargeA);
+  let stB = applyChargeToStamina(statsB.stamina * STAMINA_SCALE, chargeB);
   let spA = applyChargeToSpeed(statsA.speed, chargeA);
   let spB = applyChargeToSpeed(statsB.speed, chargeB);
 
@@ -641,14 +649,14 @@ function simulateBattle(buildA, chargeA, buildB, chargeB, seed) {
     if (coreA === 'Void' && rA > .78) { atkB -= Math.floor(atkB / 5); evA.push('Void disruption!'); }
     if (coreB === 'Void' && rB > .78) { atkA -= Math.floor(atkA / 5); evB.push('Void disruption!'); }
 
-    if (lockA === 'Over' && rA < .12) { stA = Math.max(0, stA - Math.floor(rA * 100)); evA.push('Self-destabilised!'); }
-    if (lockB === 'Over' && rB < .12) { stB = Math.max(0, stB - Math.floor(rB * 100)); evB.push('Self-destabilised!'); }
+    if (lockA === 'Over' && rA < .12) { stA = Math.max(0, stA - Math.floor(rA * 100 * STAMINA_SCALE / DAMAGE_SCALE)); evA.push('Self-destabilised!'); }
+    if (lockB === 'Over' && rB < .12) { stB = Math.max(0, stB - Math.floor(rB * 100 * STAMINA_SCALE / DAMAGE_SCALE)); evB.push('Self-destabilised!'); }
 
     if (wtA === 'Split' || drA === 'Drift') atkA += Math.floor(rA * 20);
     if (wtB === 'Split' || drB === 'Drift') atkB += Math.floor(rB * 20);
 
-    if (coreA === 'Pulse' && tick % 10 === 0) { stA += Math.floor(statsA.stamina / 20); evA.push('Pulse recovery'); }
-    if (coreB === 'Pulse' && tick % 10 === 0) { stB += Math.floor(statsB.stamina / 20); evB.push('Pulse recovery'); }
+    if (coreA === 'Pulse' && tick % 10 === 0) { stA += Math.floor(statsA.stamina * STAMINA_SCALE / 20); evA.push('Pulse recovery'); }
+    if (coreB === 'Pulse' && tick % 10 === 0) { stB += Math.floor(statsB.stamina * STAMINA_SCALE / 20); evB.push('Pulse recovery'); }
 
     stB = Math.max(0, stB - computeDamage(atkA, statsB.defense));
     stA = Math.max(0, stA - computeDamage(atkB, statsA.defense));
@@ -910,110 +918,165 @@ function runBattleAnimation(buildA, chargeA, buildB, chargeB, wager) {
 
   let tick = 0;
   const frames = result.frames;
-  const maxStA = buildA.stats.stamina;
-  const maxStB = buildB.stats.stamina;
+  // maxSt is the initial HP (post charge-scaling). Frame stA/stB values live in
+  // this same scaled space, so ratios come out correct for the progress bars.
+  const maxStA = frames[0].stA;
+  const maxStB = frames[0].stB;
+
+  // Each top has its own continuously-advancing angle so they orbit independently.
+  let angleA = 0;
+  let angleB = Math.PI; // start on opposite side
 
   function drawFrame() {
     if (tick >= frames.length) {
-      // Show result
       showBattleResult(result.winA, buildA, buildB, wager);
       return;
     }
     const f = frames[tick];
 
+    // Stamina ratios (0–1) used for visual decay
+    const ratioA = f.stA / Math.max(1, maxStA);
+    const ratioB = f.stB / Math.max(1, maxStB);
+
+    // Tops orbit at ~75% of arena radius while healthy; spiral inward only
+    // in the last 25% of stamina so most of the battle happens at full orbit.
+    const healthOrbitA = R * 0.72 * Math.max(0.05, ratioA > 0.25 ? 1 : ratioA / 0.25);
+    const healthOrbitB = R * 0.72 * Math.max(0.05, ratioB > 0.25 ? 1 : ratioB / 0.25);
+
+    // Angular speed: faster when healthy, wobbles when low hp
+    const baseSpeedA = 0.10 + 0.04 * ratioA;
+    const baseSpeedB = 0.09 + 0.04 * ratioB;
+    angleA += baseSpeedA;
+    angleB -= baseSpeedB; // opposite direction for visual contrast
+
+    // Slight eccentricity (ellipse)
+    const xA = W/2 + Math.cos(angleA) * healthOrbitA;
+    const yA = H/2 + Math.sin(angleA) * healthOrbitA * 0.6;
+    const xB = W/2 + Math.cos(angleB) * healthOrbitB;
+    const yB = H/2 + Math.sin(angleB) * healthOrbitB * 0.6;
+
+    // ── Draw ──────────────────────────────────────────────────────────────────
+
     // Background
-    ctx.fillStyle = '#0f172a'; ctx.fillRect(0,0,W,H);
-    // Arena ring
+    ctx.fillStyle = '#0a0f1e'; ctx.fillRect(0,0,W,H);
+
+    // Arena floor gradient
+    const floorGrad = ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,R);
+    floorGrad.addColorStop(0,'rgba(99,102,241,0.06)');
+    floorGrad.addColorStop(0.5,'rgba(99,102,241,0.02)');
+    floorGrad.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=floorGrad; ctx.beginPath(); ctx.arc(W/2,H/2,R,0,Math.PI*2); ctx.fill();
+
+    // Arena boundary ring
     ctx.beginPath(); ctx.arc(W/2,H/2,R,0,Math.PI*2);
-    ctx.strokeStyle='#334155'; ctx.lineWidth=3; ctx.stroke();
-    // Inner glow
-    const grad = ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,R);
-    grad.addColorStop(0,'rgba(99,102,241,0.04)');
-    grad.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(W/2,H/2,R,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#334155'; ctx.lineWidth=2.5; ctx.stroke();
+    // Inner ring marker
+    ctx.beginPath(); ctx.arc(W/2,H/2,R*0.35,0,Math.PI*2);
+    ctx.strokeStyle='rgba(99,102,241,0.15)'; ctx.lineWidth=1; ctx.stroke();
 
-    // Positions
-    const progress = tick/frames.length;
-    const angleA = progress * Math.PI * 10;
-    const orbitA = R * 0.5 * (f.stA / Math.max(1,maxStA));
-    const xA = W/2 + Math.cos(angleA)*orbitA;
-    const yA = H/2 + Math.sin(angleA)*orbitA*0.65;
+    // ── Trails ────────────────────────────────────────────────────────────────
+    ctx.globalAlpha = 0.2;
+    for (let t = 1; t <= 7; t++) {
+      const ta = angleA - t * baseSpeedA;
+      const txa = W/2 + Math.cos(ta)*healthOrbitA;
+      const tya = H/2 + Math.sin(ta)*healthOrbitA*0.6;
+      ctx.beginPath();
+      ctx.arc(txa, tya, TR * 0.8 * ((8-t)/8), 0, Math.PI*2);
+      ctx.fillStyle = '#6366f1'; ctx.fill();
 
-    const angleB = angleA + Math.PI + 0.5;
-    const orbitB = R * 0.5 * (f.stB / Math.max(1,maxStB));
-    const xB = W/2 + Math.cos(angleB)*orbitB;
-    const yB = H/2 + Math.sin(angleB)*orbitB*0.65;
-
-    // Trails
-    ctx.globalAlpha = 0.25;
-    for (let t = 1; t <= 5; t++) {
-      const ta = angleA - t*0.15;
-      const xa = W/2 + Math.cos(ta)*orbitA; const ya = H/2 + Math.sin(ta)*orbitA*0.65;
-      ctx.beginPath(); ctx.arc(xa,ya,TR*(0.3+0.7*f.stA/Math.max(1,maxStA))*((6-t)/6),0,Math.PI*2);
-      ctx.fillStyle='#6366f1'; ctx.fill();
-
-      const tb = angleB - t*0.15;
-      const xb = W/2 + Math.cos(tb)*orbitB; const yb = H/2 + Math.sin(tb)*orbitB*0.65;
-      ctx.beginPath(); ctx.arc(xb,yb,TR*(0.3+0.7*f.stB/Math.max(1,maxStB))*((6-t)/6),0,Math.PI*2);
-      ctx.fillStyle='#f43f5e'; ctx.fill();
+      const tb = angleB + t * baseSpeedB;
+      const txb = W/2 + Math.cos(tb)*healthOrbitB;
+      const tyb = H/2 + Math.sin(tb)*healthOrbitB*0.6;
+      ctx.beginPath();
+      ctx.arc(txb, tyb, TR * 0.8 * ((8-t)/8), 0, Math.PI*2);
+      ctx.fillStyle = '#f43f5e'; ctx.fill();
     }
     ctx.globalAlpha = 1;
 
-    // Spinx A
-    const radA = TR * (0.4 + 0.6 * f.stA / Math.max(1,maxStA));
+    // ── Spinx A (indigo) ──────────────────────────────────────────────────────
+    const radA = TR * (0.5 + 0.5 * ratioA);
+    // Glow
+    const glowA = ctx.createRadialGradient(xA,yA,0,xA,yA,radA*2.5);
+    glowA.addColorStop(0,'rgba(99,102,241,0.4)');
+    glowA.addColorStop(1,'rgba(99,102,241,0)');
+    ctx.fillStyle=glowA; ctx.beginPath(); ctx.arc(xA,yA,radA*2.5,0,Math.PI*2); ctx.fill();
+    // Body
     ctx.beginPath(); ctx.arc(xA,yA,radA,0,Math.PI*2);
     ctx.fillStyle='#6366f1'; ctx.fill();
     ctx.strokeStyle='#a5b4fc'; ctx.lineWidth=2; ctx.stroke();
-    // Spinning lines
+    // Spinning blades
     for (let i=0;i<4;i++) {
-      const a = angleA*6 + i*(Math.PI/2);
+      const a = tick*0.4 + i*(Math.PI/2);
       ctx.beginPath(); ctx.moveTo(xA,yA);
-      ctx.lineTo(xA+Math.cos(a)*radA*0.8, yA+Math.sin(a)*radA*0.8);
-      ctx.strokeStyle='rgba(165,180,252,0.6)'; ctx.lineWidth=1.5; ctx.stroke();
+      ctx.lineTo(xA+Math.cos(a)*radA, yA+Math.sin(a)*radA);
+      ctx.strokeStyle='rgba(165,180,252,0.7)'; ctx.lineWidth=2; ctx.stroke();
     }
 
-    // Spinx B
-    const radB = TR * (0.4 + 0.6 * f.stB / Math.max(1,maxStB));
+    // ── Spinx B (rose) ────────────────────────────────────────────────────────
+    const radB = TR * (0.5 + 0.5 * ratioB);
+    const glowB = ctx.createRadialGradient(xB,yB,0,xB,yB,radB*2.5);
+    glowB.addColorStop(0,'rgba(244,63,94,0.4)');
+    glowB.addColorStop(1,'rgba(244,63,94,0)');
+    ctx.fillStyle=glowB; ctx.beginPath(); ctx.arc(xB,yB,radB*2.5,0,Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.arc(xB,yB,radB,0,Math.PI*2);
     ctx.fillStyle='#f43f5e'; ctx.fill();
     ctx.strokeStyle='#fda4af'; ctx.lineWidth=2; ctx.stroke();
     for (let i=0;i<4;i++) {
-      const a = -angleA*6 + i*(Math.PI/2);
+      const a = -tick*0.45 + i*(Math.PI/2);
       ctx.beginPath(); ctx.moveTo(xB,yB);
-      ctx.lineTo(xB+Math.cos(a)*radB*0.8, yB+Math.sin(a)*radB*0.8);
-      ctx.strokeStyle='rgba(253,164,175,0.6)'; ctx.lineWidth=1.5; ctx.stroke();
+      ctx.lineTo(xB+Math.cos(a)*radB, yB+Math.sin(a)*radB);
+      ctx.strokeStyle='rgba(253,164,175,0.7)'; ctx.lineWidth=2; ctx.stroke();
     }
 
-    // Sparks on collision
+    // ── Collision sparks ──────────────────────────────────────────────────────
     const dist = Math.hypot(xA-xB, yA-yB);
-    if (dist < (radA+radB)*1.5) {
+    if (dist < (radA+radB) * 2.2) {
+      const mx = (xA+xB)/2, my = (yA+yB)/2;
+      // Shockwave ring
+      ctx.beginPath(); ctx.arc(mx, my, (radA+radB)*0.8, 0, Math.PI*2);
+      ctx.strokeStyle='rgba(251,191,36,0.6)'; ctx.lineWidth=2; ctx.stroke();
+      // Sparks
       ctx.fillStyle='#fbbf24';
-      for (let i=0;i<6;i++) {
-        const sx = (xA+xB)/2 + (Math.random()-.5)*30;
-        const sy = (yA+yB)/2 + (Math.random()-.5)*30;
-        ctx.fillRect(sx,sy,3,3);
+      for (let i=0;i<8;i++) {
+        const sa = (i/8)*Math.PI*2 + tick*0.3;
+        const sd = 8 + Math.random()*18;
+        ctx.fillRect(mx+Math.cos(sa)*sd-2, my+Math.sin(sa)*sd-2, 4, 4);
       }
     }
 
-    // Battle bars
-    const barH = document.getElementById('battle-stats-display');
-    barH.innerHTML = `
+    // ── Low-health flash (< 15%) ──────────────────────────────────────────────
+    if (ratioA < 0.15 && tick % 4 < 2) {
+      ctx.strokeStyle='rgba(248,113,113,0.5)'; ctx.lineWidth=4;
+      ctx.beginPath(); ctx.arc(xA,yA,radA*1.6,0,Math.PI*2); ctx.stroke();
+    }
+    if (ratioB < 0.15 && tick % 4 < 2) {
+      ctx.strokeStyle='rgba(248,113,113,0.5)'; ctx.lineWidth=4;
+      ctx.beginPath(); ctx.arc(xB,yB,radB*1.6,0,Math.PI*2); ctx.stroke();
+    }
+
+    // ── Battle bars ───────────────────────────────────────────────────────────
+    const barEl = document.getElementById('battle-stats-display');
+    const dispA = Math.round(ratioA * buildA.stats.stamina);
+    const dispB = Math.round(ratioB * buildB.stats.stamina);
+    const barColA = ratioA > 0.5 ? 'var(--indigo)' : ratioA > 0.2 ? '#f59e0b' : 'var(--red)';
+    const barColB = ratioB > 0.5 ? 'var(--rose)'   : ratioB > 0.2 ? '#f59e0b' : 'var(--red)';
+    barEl.innerHTML = `
       <div class="battle-bar-side">
         <div style="color:var(--indigo-l);font-weight:700">Your Spinx</div>
-        <div style="font-size:12px;color:var(--muted)">${f.stA} / ${maxStA} STA</div>
-        <div class="battle-bar-wrap"><div style="background:var(--indigo);height:100%;border-radius:4px;width:${(f.stA/Math.max(1,maxStA))*100}%"></div></div>
+        <div style="font-size:12px;color:var(--muted)">${dispA} / ${buildA.stats.stamina} STA</div>
+        <div class="battle-bar-wrap"><div style="background:${barColA};height:100%;border-radius:4px;width:${ratioA*100}%;transition:width .1s"></div></div>
         <div class="battle-event">${f.evA||'&nbsp;'}</div>
       </div>
       <div style="color:var(--dim);font-size:20px;padding-top:10px">⚔️</div>
       <div class="battle-bar-side">
         <div style="color:var(--rose-l);font-weight:700">AI Opponent</div>
-        <div style="font-size:12px;color:var(--muted)">${f.stB} / ${maxStB} STA</div>
-        <div class="battle-bar-wrap"><div style="background:var(--rose);height:100%;border-radius:4px;width:${(f.stB/Math.max(1,maxStB))*100}%"></div></div>
+        <div style="font-size:12px;color:var(--muted)">${dispB} / ${buildB.stats.stamina} STA</div>
+        <div class="battle-bar-wrap"><div style="background:${barColB};height:100%;border-radius:4px;width:${ratioB*100}%;transition:width .1s"></div></div>
         <div class="battle-event">${f.evB||'&nbsp;'}</div>
       </div>`;
 
     tick++;
-    battleAnimTimer = setTimeout(drawFrame, 35);
+    battleAnimTimer = setTimeout(drawFrame, 40);
   }
 
   drawFrame();
