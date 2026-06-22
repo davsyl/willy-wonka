@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPINX — On-chain Battle Tops (Demo)</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0f172a;
+    --surface:  #111827;
+    --surface2: #1e293b;
+    --border:   #334155;
+    --text:     #f9fafb;
+    --muted:    #94a3b8;
+    --dim:      #475569;
+    --indigo:   #6366f1;
+    --indigo-l: #a5b4fc;
+    --rose:     #f43f5e;
+    --rose-l:   #fda4af;
+    --gold:     #fbbf24;
+    --green:    #4ade80;
+    --red:      #f87171;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── Nav ─────────────────────────────────────────────────────────────────── */
+  nav {
+    background: #020617;
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo { color: var(--indigo); font-weight: 900; font-size: 20px; letter-spacing: .08em; }
+  .nav-links { display: flex; gap: 4px; }
+  .nav-btn {
+    padding: 6px 14px; border-radius: 8px; border: none;
+    cursor: pointer; font-size: 13px; font-weight: 500;
+    background: transparent; color: var(--muted); transition: all .15s;
+  }
+  .nav-btn:hover, .nav-btn.active { background: var(--surface2); color: var(--text); }
+  .sprk-badge {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 20px; padding: 4px 14px; font-size: 13px; font-weight: 600;
+    color: var(--gold);
+  }
+
+  /* ── Layout ──────────────────────────────────────────────────────────────── */
+  main { max-width: 1100px; margin: 0 auto; padding: 28px 20px; }
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ── Cards ───────────────────────────────────────────────────────────────── */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px;
+  }
+  .card-sm { padding: 12px 14px; }
+  h2 { font-size: 22px; font-weight: 700; margin-bottom: 20px; }
+  h3 { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
+
+  /* ── Buttons ─────────────────────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 9px 18px; border-radius: 8px; border: none;
+    cursor: pointer; font-size: 13px; font-weight: 600;
+    transition: all .15s; white-space: nowrap;
+  }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-primary { background: var(--indigo); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #4f46e5; }
+  .btn-secondary {
+    background: var(--surface2); color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover:not(:disabled) { color: var(--text); border-color: #64748b; }
+  .btn-danger { background: #7f1d1d; color: var(--red); }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn-gold { background: #78350f; color: var(--gold); }
+  .btn-gold:hover:not(:disabled) { background: #92400e; }
+
+  /* ── Tabs ────────────────────────────────────────────────────────────────── */
+  .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+  .tab {
+    padding: 6px 14px; border-radius: 6px; border: none;
+    cursor: pointer; font-size: 12px; font-weight: 600;
+    background: var(--surface2); color: var(--muted); transition: all .15s;
+  }
+  .tab.active { background: var(--indigo); color: #fff; }
+
+  /* ── Form elements ───────────────────────────────────────────────────────── */
+  select, input[type=number], input[type=text] {
+    width: 100%; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface2);
+    color: var(--text); font-size: 13px; outline: none;
+  }
+  select:focus, input:focus { border-color: var(--indigo); }
+  label { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+  .form-row { margin-bottom: 14px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  input[type=range] { width: 100%; accent-color: var(--indigo); }
+
+  /* ── Grid layouts ────────────────────────────────────────────────────────── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
+  .flex { display: flex; gap: 12px; flex-wrap: wrap; }
+  .flex-col { display: flex; flex-direction: column; gap: 10px; }
+  .between { display: flex; justify-content: space-between; align-items: center; }
+
+  /* ── Rarity colours ──────────────────────────────────────────────────────── */
+  .rarity-common    { color: #9ca3af; }
+  .rarity-uncommon  { color: #4ade80; }
+  .rarity-rare      { color: #60a5fa; }
+  .rarity-epic      { color: #c084fc; }
+  .rarity-legendary { color: #fbbf24; }
+
+  /* ── Part badge ──────────────────────────────────────────────────────────── */
+  .part-badge {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface2); font-size: 12px;
+  }
+  .part-badge .pname { font-weight: 600; text-transform: capitalize; }
+
+  /* ── Spinx card ──────────────────────────────────────────────────────────── */
+  .spinx-card {
+    border: 2px solid var(--border); border-radius: 12px;
+    padding: 14px; background: var(--surface);
+    cursor: pointer; transition: all .15s; min-width: 190px;
+  }
+  .spinx-card:hover { border-color: var(--indigo); }
+  .spinx-card.selected { border-color: var(--indigo); box-shadow: 0 0 16px #6366f144; }
+  .stat-row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 3px; }
+  .stat-bar-wrap { background: #1f2937; border-radius: 4px; height: 5px; margin-bottom: 5px; }
+  .stat-bar-fill  { background: var(--indigo); height: 100%; border-radius: 4px; }
+
+  /* ── Pack shop ───────────────────────────────────────────────────────────── */
+  .pack-card {
+    border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+    background: var(--surface); text-align: center; transition: all .15s;
+  }
+  .pack-card:hover { border-color: var(--indigo); }
+  .pack-icon { font-size: 48px; margin-bottom: 12px; }
+  .pack-name { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+  .pack-desc { color: var(--muted); font-size: 12px; margin-bottom: 16px; line-height: 1.5; }
+
+  /* ── Pack reveal overlay ─────────────────────────────────────────────────── */
+  #reveal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.85);
+    z-index: 200; align-items: center; justify-content: center; flex-direction: column;
+  }
+  #reveal-overlay.show { display: flex; }
+  .reveal-card {
+    background: var(--surface); border-radius: 16px; padding: 40px;
+    text-align: center; min-width: 280px; animation: popIn .3s cubic-bezier(.175,.885,.32,1.275);
+  }
+  @keyframes popIn { from { transform: scale(.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .reveal-icon { font-size: 72px; margin-bottom: 16px; }
+  .reveal-name { font-size: 24px; font-weight: 800; margin-bottom: 6px; }
+  .reveal-rarity { font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: .1em; margin-bottom: 20px; }
+
+  /* ── Battle arena ────────────────────────────────────────────────────────── */
+  #battle-canvas {
+    border-radius: 12px; border: 1px solid var(--border); display: block; margin: 0 auto;
+  }
+  .battle-bars { display: flex; gap: 32px; justify-content: center; margin-top: 12px; }
+  .battle-bar-side { text-align: center; min-width: 150px; }
+  .battle-bar-wrap { background: var(--surface2); border-radius: 4px; height: 8px; margin-top: 6px; }
+  .battle-event { color: var(--gold); font-size: 12px; margin-top: 6px; min-height: 18px; }
+  .battle-result-banner {
+    text-align: center; padding: 24px; border-radius: 12px;
+    margin-top: 20px; font-size: 22px; font-weight: 800;
+  }
+  .winner-banner { background: #14532d; color: var(--green); }
+  .loser-banner  { background: #450a0a; color: var(--red);   }
+
+  /* ── Toast ───────────────────────────────────────────────────────────────── */
+  #toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 18px; font-size: 13px;
+    transform: translateY(80px); opacity: 0; transition: all .25s;
+    z-index: 300; max-width: 320px;
+  }
+  #toast.show { transform: translateY(0); opacity: 1; }
+
+  /* ── Modal ───────────────────────────────────────────────────────────────── */
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.75);
+    z-index: 150; align-items: center; justify-content: center;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 28px; max-width: 420px; width: 90%;
+  }
+
+  /* ── Misc ────────────────────────────────────────────────────────────────── */
+  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .warning { color: var(--red); }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 600; background: var(--surface2); border: 1px solid var(--border);
+  }
+  .section-gap { margin-bottom: 28px; }
+  .empty-state { text-align: center; padding: 40px; color: var(--dim); }
+  .empty-state .big { font-size: 40px; margin-bottom: 10px; }
+  #leaderboard-table { width: 100%; border-collapse: collapse; }
+  #leaderboard-table th, #leaderboard-table td {
+    text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px;
+  }
+  #leaderboard-table th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  #leaderboard-table tr:last-child td { border-bottom: none; }
+  .rank-1 { color: var(--gold); font-weight: 700; }
+  .rank-2 { color: #c0c0c0; font-weight: 600; }
+  .rank-3 { color: #cd7f32; font-weight: 600; }
+
+  @media (max-width: 640px) {
+    .grid-2, .grid-3, .form-grid { grid-template-columns: 1fr; }
+    .battle-bars { flex-direction: column; align-items: center; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── Navigation ──────────────────────────────────────────────────────────── -->
+<nav>
+  <span class="logo">SPINX</span>
+  <div class="nav-links">
+    <button class="nav-btn active" onclick="showPage('home')">Home</button>
+    <button class="nav-btn" onclick="showPage('shop')">Shop</button>
+    <button class="nav-btn" onclick="showPage('inventory')">Inventory</button>
+    <button class="nav-btn" onclick="showPage('battle')">Battle</button>
+    <button class="nav-btn" onclick="showPage('leaderboard')">Leaderboard</button>
+  </div>
+  <span class="sprk-badge" id="sprk-display">⚡ 100 $SPRK</span>
+</nav>
+
+<!-- ── Pages ───────────────────────────────────────────────────────────────── -->
+<main>
+
+  <!-- HOME -->
+  <div class="page active" id="page-home">
+    <div style="text-align:center; margin-top:48px; margin-bottom:48px">
+      <div style="font-size:80px; font-weight:900; color:var(--indigo); letter-spacing:.08em">SPINX</div>
+      <div style="color:var(--muted); font-size:18px; margin-top:8px; margin-bottom:32px">
+        On-chain battle tops — collect, assemble, and fight
+      </div>
+      <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="showPage('shop')" style="font-size:15px; padding:12px 28px">
+          🛍 Open Packs
+        </button>
+        <button class="btn btn-secondary" onclick="showPage('battle')" style="font-size:15px; padding:12px 28px">
+          ⚔️ Go Battle
+        </button>
+      </div>
+    </div>
+
+    <div class="grid-3 section-gap">
+      <div class="card" style="text-align:center">
+        <div style="font-size:32px; margin-bottom:8px">🌀</div>
+        <div style="font-weight:700; margin-bottom:6px">5-Part System</div>
+        <div class="muted small">Core · Ring · Weight · Drive · Lock — each combo plays differently</div>
+      </div>
+      <div class="card" style="text-align:center">
+        <div style="font-size:32px; margin-bottom:8px">⚡</div>
+        <div style="font-weight:700; margin-bottom:6px">Twist & Launch</div>
+        <div class="muted small">Charge 0–100%. Overcharge past 85% at your own risk</div>
+      </div>
+      <div class="card" style="text-align:center">
+        <div style="font-size:32px; margin-bottom:8px">🏆</div>
+        <div style="font-weight:700; margin-bottom:6px">Wager $SPRK</div>
+        <div class="muted small">Winner takes all. Climb the leaderboard</div>
+      </div>
+    </div>
+
+    <div class="card" id="home-stats">
+      <h3>Your Stats</h3>
+      <div id="home-stats-content"></div>
+    </div>
+  </div>
+
+  <!-- SHOP -->
+  <div class="page" id="page-shop">
+    <h2>Pack Shop</h2>
+    <p class="muted small" style="margin-bottom:24px">Each pack contains one randomised part. Rarity: Common 50% · Uncommon 25% · Rare 15% · Epic 7% · Legendary 3%</p>
+    <div class="grid-3" id="pack-grid"></div>
+
+    <hr class="divider">
+
+    <div class="card">
+      <div class="between" style="margin-bottom:16px">
+        <h3 style="margin:0">Starter Bundle</h3>
+        <span class="badge">50 $SPRK — one of each</span>
+      </div>
+      <p class="muted small" style="margin-bottom:16px">Opens one pack for every category at once. Best value for new players.</p>
+      <button class="btn btn-gold" onclick="buyBundle()">⚡ Buy Starter Bundle (50 $SPRK)</button>
+    </div>
+  </div>
+
+  <!-- INVENTORY -->
+  <div class="page" id="page-inventory">
+    <h2>Inventory</h2>
+    <div class="grid-2">
+      <!-- Parts panel -->
+      <div>
+        <div class="card section-gap">
+          <div class="between" style="margin-bottom:14px">
+            <h3 style="margin:0">Parts</h3>
+            <span class="muted small" id="parts-count"></span>
+          </div>
+          <div class="tabs" id="parts-tabs"></div>
+          <div id="parts-list" style="display:flex; flex-direction:column; gap:7px; max-height:340px; overflow-y:auto"></div>
+        </div>
+
+        <div class="card">
+          <h3>Assemble Spinx</h3>
+          <div class="form-grid">
+            <div class="form-row">
+              <label>Core</label>
+              <select id="sel-core"><option value="">— choose —</option></select>
+            </div>
+            <div class="form-row">
+              <label>Ring</label>
+              <select id="sel-ring"><option value="">— choose —</option></select>
+            </div>
+            <div class="form-row">
+              <label>Weight</label>
+              <select id="sel-weight"><option value="">— choose —</option></select>
+            </div>
+            <div class="form-row">
+              <label>Drive</label>
+              <select id="sel-drive"><option value="">— choose —</option></select>
+            </div>
+            <div class="form-row" style="grid-column:1/-1">
+              <label>Lock</label>
+              <select id="sel-lock"><option value="">— choose —</option></select>
+            </div>
+          </div>
+          <div id="assemble-preview" style="margin-bottom:14px"></div>
+          <button class="btn btn-primary" onclick="assembleSpinx()" id="assemble-btn">Build Spinx</button>
+        </div>
+      </div>
+
+      <!-- Spinx panel -->
+      <div class="card">
+        <div class="between" style="margin-bottom:14px">
+          <h3 style="margin:0">Assembled Spinx</h3>
+          <span class="muted small" id="builds-count"></span>
+        </div>
+        <div id="builds-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BATTLE -->
+  <div class="page" id="page-battle">
+    <h2>Battle Arena</h2>
+    <div id="battle-setup">
+      <div class="grid-2 section-gap">
+        <!-- Your side -->
+        <div class="card">
+          <h3>Your Spinx</h3>
+          <div class="form-row">
+            <label>Select build</label>
+            <select id="battle-spinx-sel" onchange="updateBattlePreview()"></select>
+          </div>
+          <div id="battle-your-card" style="margin-bottom:16px"></div>
+          <div class="form-row">
+            <label id="charge-label">Charge: <strong>70%</strong></label>
+            <input type="range" id="charge-slider" min="0" max="100" value="70"
+              oninput="updateChargeLabel(this.value)">
+            <div id="charge-warning" style="color:var(--red); font-size:11px; margin-top:4px; min-height:16px"></div>
+          </div>
+          <div class="form-row">
+            <label>Wager ($SPRK, min 1)</label>
+            <input type="number" id="wager-input" value="5" min="1" max="500">
+          </div>
+        </div>
+
+        <!-- Opponent -->
+        <div class="card">
+          <h3>Opponent</h3>
+          <div class="form-row">
+            <label>AI difficulty</label>
+            <select id="ai-difficulty" onchange="generateAI()">
+              <option value="random">Random build</option>
+              <option value="balanced">Balanced build</option>
+              <option value="attacker">Aggressive attacker</option>
+              <option value="tank">Heavy tank</option>
+              <option value="stamina">Stamina master</option>
+            </select>
+          </div>
+          <div id="battle-ai-card"></div>
+          <div style="margin-top:14px">
+            <label>AI charge: <span id="ai-charge-display">70%</span></label>
+            <div style="margin-top:6px; color:var(--dim); font-size:12px">Set automatically by difficulty</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align:center">
+        <button class="btn btn-primary" onclick="startBattle()" id="start-battle-btn" style="font-size:16px; padding:14px 40px">
+          ⚡ Launch Battle!
+        </button>
+      </div>
+    </div>
+
+    <!-- Arena -->
+    <div id="battle-arena" style="display:none">
+      <div style="text-align:center; margin-bottom:20px">
+        <div id="countdown-display" style="font-size:96px; font-weight:900; color:var(--indigo)"></div>
+      </div>
+      <canvas id="battle-canvas" width="500" height="500"></canvas>
+      <div class="battle-bars" id="battle-stats-display"></div>
+      <div id="battle-result"></div>
+      <div style="text-align:center; margin-top:20px; display:none" id="battle-done-btns">
+        <button class="btn btn-primary" onclick="resetBattle()" style="margin-right:10px">⚔️ Battle Again</button>
+        <button class="btn btn-secondary" onclick="showPage('leaderboard')">🏆 Leaderboard</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LEADERBOARD -->
+  <div class="page" id="page-leaderboard">
+    <h2>Leaderboard</h2>
+    <div class="card">
+      <table id="leaderboard-table">
+        <thead>
+          <tr>
+            <th>#</th><th>Player</th><th>W</th><th>L</th><th>Win %</th><th>$SPRK Won</th>
+          </tr>
+        </thead>
+        <tbody id="leaderboard-body"></tbody>
+      </table>
+    </div>
+    <div style="margin-top:20px; text-align:right">
+      <button class="btn btn-danger btn-sm" onclick="resetGame()">Reset All Data</button>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── Pack Reveal Overlay ──────────────────────────────────────────────────── -->
+<div id="reveal-overlay">
+  <div class="reveal-card" id="reveal-card">
+    <div class="reveal-icon" id="reveal-icon"></div>
+    <div class="reveal-name" id="reveal-name"></div>
+    <div class="reveal-rarity" id="reveal-rarity"></div>
+    <div class="muted small" id="reveal-category"></div>
+    <button class="btn btn-primary" onclick="closeReveal()" style="margin-top:20px">Collect!</button>
+  </div>
+</div>
+
+<!-- ── Toast ────────────────────────────────────────────────────────────────── -->
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONSTANTS — mirror programs/spinx/src/constants.rs
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const ONE_SPRK             = 1;          // simplified (no 6-decimal scale in demo)
+const PACK_PRICE           = 10;
+const STARTER_GRANT        = 100;
+const MIN_WAGER            = 1;
+const MAX_WAGER            = 500;
+const BATTLE_TICKS         = 100;
+const OVERCHARGE_THRESHOLD = 85;
+const OVERCHARGE_PENALTY   = 2;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DATA TABLES — mirror programs/spinx/src/state/spinx.rs
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const RARITIES = [
+  { name:'common',    weight:127, color:'#9ca3af', stars:'★☆☆☆☆' },
+  { name:'uncommon',  weight:63,  color:'#4ade80', stars:'★★☆☆☆' },
+  { name:'rare',      weight:38,  color:'#60a5fa', stars:'★★★☆☆' },
+  { name:'epic',      weight:17,  color:'#c084fc', stars:'★★★★☆' },
+  { name:'legendary', weight:11,  color:'#fbbf24', stars:'★★★★★' },
+];
+
+const CORES = [
+  { name:'Flare',  icon:'🔥', desc:'Aggressive burst damage',       bases:[50,10,20,20,30] },
+  { name:'Anchor', icon:'⚓', desc:'Resists knockouts, very heavy', bases:[20,50,30,20,10] },
+  { name:'Pulse',  icon:'💚', desc:'Regains stability post-impact', bases:[20,25,50,20,15] },
+  { name:'Void',   icon:'🌑', desc:'Disrupts opponent spin',        bases:[35,15,20,40,20] },
+  { name:'Nova',   icon:'⭐', desc:'Late-game power spike',         bases:[30,20,20,20,40] },
+];
+const RINGS = [
+  { name:'Fang',     icon:'🦷', desc:'High attack, unstable',      bases:[45,5,10,10,15]  },
+  { name:'Guard',    icon:'🛡️', desc:'Absorbs hits',               bases:[10,45,15,15,10] },
+  { name:'Rebound',  icon:'🔄', desc:'Bounces opponents',          bases:[20,20,15,35,20] },
+  { name:'Crescent', icon:'🌙', desc:'Spin-steal on contact',      bases:[30,15,20,30,15] },
+  { name:'Hammer',   icon:'🔨', desc:'Heavy smash attacks',        bases:[50,15,15,10,5]  },
+];
+const WEIGHTS = [
+  { name:'Center', icon:'⚖️', desc:'Stable and balanced',         bases:[20,20,25,25,20] },
+  { name:'Edge',   icon:'💫', desc:'High attack momentum',        bases:[35,10,10,15,25] },
+  { name:'Split',  icon:'🎲', desc:'Unpredictable movement',      bases:[20,15,20,15,25] },
+  { name:'Low',    icon:'🪨', desc:'Improves balance',            bases:[10,30,20,35,15] },
+  { name:'Heavy',  icon:'🏋️', desc:'Resists knockouts, slower',  bases:[15,45,30,10,5]  },
+];
+const DRIVES = [
+  { name:'Needle', icon:'🪡', desc:'Stable stamina focus',        bases:[10,15,45,20,15] },
+  { name:'Flat',   icon:'💨', desc:'Fast and aggressive',         bases:[25,5,10,10,50]  },
+  { name:'Orbit',  icon:'🌀', desc:'Circles the arena',           bases:[15,15,30,30,20] },
+  { name:'Drift',  icon:'〰️', desc:'Unpredictable movement',     bases:[20,10,15,15,35] },
+  { name:'Grip',   icon:'✊', desc:'High control',                bases:[10,20,20,45,15] },
+  { name:'Dash',   icon:'⚡', desc:'Sudden speed bursts',         bases:[30,10,10,15,45] },
+];
+const LOCKS = [
+  { name:'Tight', icon:'🔒', desc:'Resists breakage',            bases:[10,35,20,20,15] },
+  { name:'Flex',  icon:'🌊', desc:'Absorbs impact',              bases:[10,25,40,15,10] },
+  { name:'Quick', icon:'💥', desc:'Faster launch, weaker',       bases:[15,10,15,20,40] },
+  { name:'Over',  icon:'☠️', desc:'High power, risky',           bases:[40,5,10,10,25]  },
+  { name:'Phase', icon:'👻', desc:'Stat swap at 50% stamina',    bases:[20,20,20,25,25] },
+];
+
+const CATEGORIES = [
+  { key:'cores',   label:'Core',   table:CORES   },
+  { key:'rings',   label:'Ring',   table:RINGS   },
+  { key:'weights', label:'Weight', table:WEIGHTS },
+  { key:'drives',  label:'Drive',  table:DRIVES  },
+  { key:'locks',   label:'Lock',   table:LOCKS   },
+];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STAT ENGINE — mirror SpinxStats::derive in spinx.rs
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function rarityMult(rarity) {
+  return { common:100, uncommon:115, rare:130, epic:150, legendary:175 }[rarity];
+}
+
+function deriveStats(build) {
+  // build = { core, ring, weight, drive, lock } each: { tableIndex, rarity }
+  const parts = [
+    CATEGORIES[0].table[build.core.tableIndex],
+    CATEGORIES[1].table[build.ring.tableIndex],
+    CATEGORIES[2].table[build.weight.tableIndex],
+    CATEGORIES[3].table[build.drive.tableIndex],
+    CATEGORIES[4].table[build.lock.tableIndex],
+  ];
+  const rarities = [build.core.rarity, build.ring.rarity, build.weight.rarity, build.drive.rarity, build.lock.rarity];
+  const avgMult = rarities.reduce((s,r) => s + rarityMult(r), 0) / 5;
+  const raw = [0,0,0,0,0];
+  parts.forEach(p => p.bases.forEach((b,i) => raw[i] += b));
+  return {
+    attack:  Math.round(raw[0] * avgMult / 100),
+    defense: Math.round(raw[1] * avgMult / 100),
+    stamina: Math.round(raw[2] * avgMult / 100),
+    control: Math.round(raw[3] * avgMult / 100),
+    speed:   Math.round(raw[4] * avgMult / 100),
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BATTLE ENGINE — mirror resolve_battle.rs + battle-engine.ts
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function applyChargeToStamina(base, charge) {
+  if (charge > OVERCHARGE_THRESHOLD) {
+    const excess = charge - OVERCHARGE_THRESHOLD;
+    return Math.max(0, base - Math.floor(base * excess * OVERCHARGE_PENALTY / 100));
+  }
+  return base;
+}
+function applyChargeToSpeed(base, charge) {
+  const eff = Math.min(charge, OVERCHARGE_THRESHOLD);
+  return base + Math.floor(base * eff / 200);
+}
+function computeDamage(atk, def) { return Math.max(1, atk - Math.floor(def / 2)); }
+
+// Simple deterministic LCG seeded from timestamp
+function makePRNG(seed) {
+  let s = seed >>> 0;
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+}
+
+function simulateBattle(buildA, chargeA, buildB, chargeB, seed) {
+  const rng = makePRNG(seed);
+  const statsA = buildA.stats, statsB = buildB.stats;
+
+  let stA = applyChargeToStamina(statsA.stamina, chargeA);
+  let stB = applyChargeToStamina(statsB.stamina, chargeB);
+  let spA = applyChargeToSpeed(statsA.speed, chargeA);
+  let spB = applyChargeToSpeed(statsB.speed, chargeB);
+
+  const initStA = stA, initStB = stB;
+  let phaseA = false, phaseB = false;
+  const frames = [];
+
+  const coreA = CORES[buildA.core.tableIndex].name;
+  const coreB = CORES[buildB.core.tableIndex].name;
+  const ringA = RINGS[buildA.ring.tableIndex].name;
+  const ringB = RINGS[buildB.ring.tableIndex].name;
+  const lockA = LOCKS[buildA.lock.tableIndex].name;
+  const lockB = LOCKS[buildB.lock.tableIndex].name;
+  const wtA   = WEIGHTS[buildA.weight.tableIndex].name;
+  const wtB   = WEIGHTS[buildB.weight.tableIndex].name;
+  const drA   = DRIVES[buildA.drive.tableIndex].name;
+  const drB   = DRIVES[buildB.drive.tableIndex].name;
+
+  for (let tick = 0; tick < BATTLE_TICKS; tick++) {
+    const rA = rng(), rB = rng();
+    const evA = [], evB = [];
+
+    if (coreA === 'Nova' && tick > 60) spA += (tick - 60) * 2;
+    if (coreB === 'Nova' && tick > 60) spB += (tick - 60) * 2;
+
+    if (!phaseA && lockA === 'Phase' && stA < initStA / 2) { phaseA = true; evA.push('Phase Lock!'); }
+    if (!phaseB && lockB === 'Phase' && stB < initStB / 2) { phaseB = true; evB.push('Phase Lock!'); }
+
+    let atkA = phaseA ? statsA.defense : statsA.attack;
+    let atkB = phaseB ? statsB.defense : statsB.attack;
+
+    if (spA > spB) atkA += Math.floor(atkA / 10);
+    else if (spB > spA) atkB += Math.floor(atkB / 10);
+
+    if (ringA === 'Crescent' && rA > .7) { spB = Math.max(0, spB - 5); evA.push('Spin steal!'); }
+    if (ringB === 'Crescent' && rB > .7) { spA = Math.max(0, spA - 5); evB.push('Spin steal!'); }
+
+    if (coreA === 'Void' && rA > .78) { atkB -= Math.floor(atkB / 5); evA.push('Void disruption!'); }
+    if (coreB === 'Void' && rB > .78) { atkA -= Math.floor(atkA / 5); evB.push('Void disruption!'); }
+
+    if (lockA === 'Over' && rA < .12) { stA = Math.max(0, stA - Math.floor(rA * 100)); evA.push('Self-destabilised!'); }
+    if (lockB === 'Over' && rB < .12) { stB = Math.max(0, stB - Math.floor(rB * 100)); evB.push('Self-destabilised!'); }
+
+    if (wtA === 'Split' || drA === 'Drift') atkA += Math.floor(rA * 20);
+    if (wtB === 'Split' || drB === 'Drift') atkB += Math.floor(rB * 20);
+
+    if (coreA === 'Pulse' && tick % 10 === 0) { stA += Math.floor(statsA.stamina / 20); evA.push('Pulse recovery'); }
+    if (coreB === 'Pulse' && tick % 10 === 0) { stB += Math.floor(statsB.stamina / 20); evB.push('Pulse recovery'); }
+
+    stB = Math.max(0, stB - computeDamage(atkA, statsB.defense));
+    stA = Math.max(0, stA - computeDamage(atkB, statsA.defense));
+
+    frames.push({ tick, stA, stB, spA, spB, evA:evA.join(', ')||null, evB:evB.join(', ')||null });
+    if (stA === 0 || stB === 0) break;
+  }
+
+  const last = frames[frames.length - 1];
+  const winA = (last.stA === 0 && last.stB === 0)
+    ? statsA.stamina >= statsB.stamina
+    : last.stA > last.stB;
+
+  return { winA, frames, seed };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GAME STATE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const DEFAULT_STATE = {
+  sprk: STARTER_GRANT,
+  parts: { cores:[], rings:[], weights:[], drives:[], locks:[] },
+  builds: [],
+  nextPartId: { cores:0, rings:0, weights:0, drives:0, locks:0 },
+  nextBuildId: 0,
+  stats: { wins:0, losses:0, sprkWon:0, sprkLost:0, battles:0 },
+  leaderboard: [],
+};
+
+let G = JSON.parse(localStorage.getItem('spinx_state') || 'null') || JSON.parse(JSON.stringify(DEFAULT_STATE));
+
+function save() { localStorage.setItem('spinx_state', JSON.stringify(G)); }
+
+function resetGame() {
+  if (!confirm('Reset all game data? This cannot be undone.')) return;
+  G = JSON.parse(JSON.stringify(DEFAULT_STATE));
+  save(); location.reload();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ROLLING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function rollRarity() {
+  const r = Math.random() * 256;
+  if (r < 127) return 'common';
+  if (r < 190) return 'uncommon';
+  if (r < 228) return 'rare';
+  if (r < 245) return 'epic';
+  return 'legendary';
+}
+
+function rollPart(catIdx) {
+  const cat  = CATEGORIES[catIdx];
+  const tbl  = cat.table;
+  const idx  = Math.floor(Math.random() * tbl.length);
+  const rar  = rollRarity();
+  const id   = G.nextPartId[cat.key]++;
+  const part = { id, tableIndex: idx, rarity: rar };
+  G.parts[cat.key].push(part);
+  return { part, catIdx, meta: tbl[idx] };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PACK REVEAL
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let pendingRevealQueue = [];
+let revealIndex = 0;
+
+function showReveal(items) {
+  pendingRevealQueue = items;
+  revealIndex = 0;
+  showNextReveal();
+}
+
+function showNextReveal() {
+  if (revealIndex >= pendingRevealQueue.length) {
+    document.getElementById('reveal-overlay').classList.remove('show');
+    renderAll();
+    return;
+  }
+  const { part, catIdx, meta } = pendingRevealQueue[revealIndex];
+  const rarData = RARITIES.find(r => r.name === part.rarity);
+  const cat = CATEGORIES[catIdx];
+
+  document.getElementById('reveal-icon').textContent = meta.icon;
+  document.getElementById('reveal-name').textContent = meta.name + ' ' + cat.label;
+  document.getElementById('reveal-rarity').textContent = rarData.stars + ' ' + part.rarity.toUpperCase();
+  document.getElementById('reveal-rarity').style.color = rarData.color;
+  document.getElementById('reveal-category').textContent = cat.label + ' Part';
+
+  const card = document.getElementById('reveal-card');
+  card.style.borderColor = rarData.color;
+
+  const overlay = document.getElementById('reveal-overlay');
+  overlay.classList.add('show');
+
+  // Re-animate
+  card.style.animation = 'none';
+  void card.offsetWidth;
+  card.style.animation = '';
+}
+
+function closeReveal() {
+  revealIndex++;
+  showNextReveal();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PACK BUYING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function buyPack(catIdx) {
+  if (G.sprk < PACK_PRICE) { toast('Not enough $SPRK! Need 10.', 'error'); return; }
+  G.sprk -= PACK_PRICE;
+  const result = rollPart(catIdx);
+  save();
+  updateSprkDisplay();
+  showReveal([result]);
+}
+
+function buyBundle() {
+  if (G.sprk < PACK_PRICE * 5) { toast('Not enough $SPRK! Need 50.', 'error'); return; }
+  G.sprk -= PACK_PRICE * 5;
+  const results = [0,1,2,3,4].map(i => rollPart(i));
+  save();
+  updateSprkDisplay();
+  showReveal(results);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ASSEMBLY
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function assembleSpinx() {
+  const keys = ['sel-core','sel-ring','sel-weight','sel-drive','sel-lock'];
+  const catKeys = ['cores','rings','weights','drives','locks'];
+  const selected = keys.map((k,i) => {
+    const val = document.getElementById(k).value;
+    if (!val) return null;
+    return G.parts[catKeys[i]].find(p => p.id === parseInt(val));
+  });
+  if (selected.some(s => !s)) { toast('Select all 5 parts first!', 'error'); return; }
+
+  const build = {
+    id: G.nextBuildId++,
+    core:   selected[0],
+    ring:   selected[1],
+    weight: selected[2],
+    drive:  selected[3],
+    lock:   selected[4],
+  };
+  build.stats = deriveStats(build);
+  G.builds.push(build);
+  save();
+  toast('Spinx assembled! 🌀', 'success');
+  renderAll();
+}
+
+function deleteBuild(id) {
+  G.builds = G.builds.filter(b => b.id !== id);
+  save();
+  renderAll();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AI OPPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let aiOpponent = null;
+
+function generateAI() {
+  const difficulty = document.getElementById('ai-difficulty').value;
+  let coreIdx, ringIdx, weightIdx, driveIdx, lockIdx, rarity, charge;
+
+  switch (difficulty) {
+    case 'attacker':
+      coreIdx=0; ringIdx=0; weightIdx=1; driveIdx=1; lockIdx=3; rarity='uncommon'; charge=90; break;
+    case 'tank':
+      coreIdx=1; ringIdx=1; weightIdx=4; driveIdx=0; lockIdx=0; rarity='rare'; charge=50; break;
+    case 'stamina':
+      coreIdx=2; ringIdx=2; weightIdx=2; driveIdx=2; lockIdx=1; rarity='uncommon'; charge=60; break;
+    case 'balanced':
+      coreIdx=3; ringIdx=3; weightIdx=0; driveIdx=4; lockIdx=4; rarity='rare'; charge=75; break;
+    default: // random
+      coreIdx=Math.floor(Math.random()*5);
+      ringIdx=Math.floor(Math.random()*5);
+      weightIdx=Math.floor(Math.random()*5);
+      driveIdx=Math.floor(Math.random()*6);
+      lockIdx=Math.floor(Math.random()*5);
+      rarity='common'; charge=40+Math.floor(Math.random()*50);
+  }
+
+  const build = {
+    id: 'ai',
+    core:   { id:'ai-c', tableIndex:coreIdx,   rarity },
+    ring:   { id:'ai-r', tableIndex:ringIdx,   rarity },
+    weight: { id:'ai-w', tableIndex:weightIdx, rarity },
+    drive:  { id:'ai-d', tableIndex:driveIdx,  rarity },
+    lock:   { id:'ai-l', tableIndex:lockIdx,   rarity },
+  };
+  build.stats = deriveStats(build);
+  aiOpponent = { build, charge };
+
+  document.getElementById('ai-charge-display').textContent = charge + '%';
+  document.getElementById('battle-ai-card').innerHTML = renderSpinxCardHTML(build, false);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BATTLE FLOW
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let battleAnimTimer = null;
+
+function startBattle() {
+  const sel = document.getElementById('battle-spinx-sel').value;
+  if (!sel) { toast('Select your Spinx!', 'error'); return; }
+  const myBuild = G.builds.find(b => b.id === parseInt(sel));
+  if (!myBuild) { toast('Build not found!', 'error'); return; }
+  if (!aiOpponent) { toast('Generate an opponent first!', 'error'); return; }
+
+  const wager = parseInt(document.getElementById('wager-input').value) || 5;
+  if (wager < MIN_WAGER || wager > MAX_WAGER) { toast(`Wager must be ${MIN_WAGER}–${MAX_WAGER} $SPRK`, 'error'); return; }
+  if (G.sprk < wager) { toast('Not enough $SPRK!', 'error'); return; }
+
+  const charge = parseInt(document.getElementById('charge-slider').value);
+
+  document.getElementById('battle-setup').style.display = 'none';
+  document.getElementById('battle-arena').style.display = 'block';
+  document.getElementById('battle-done-btns').style.display = 'none';
+  document.getElementById('battle-result').innerHTML = '';
+
+  // Countdown
+  const cd = document.getElementById('countdown-display');
+  let count = 3;
+  cd.textContent = count;
+  const cdInterval = setInterval(() => {
+    count--;
+    if (count === 0) {
+      cd.textContent = 'FIGHT!';
+      clearInterval(cdInterval);
+      setTimeout(() => { cd.textContent = ''; runBattleAnimation(myBuild, charge, aiOpponent.build, aiOpponent.charge, wager); }, 600);
+    } else {
+      cd.textContent = count;
+    }
+  }, 700);
+}
+
+function runBattleAnimation(buildA, chargeA, buildB, chargeB, wager) {
+  const seed = Date.now();
+  const result = simulateBattle(buildA, chargeA, buildB, chargeB, seed);
+
+  const canvas = document.getElementById('battle-canvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const R = 210, TR = 20;
+
+  let tick = 0;
+  const frames = result.frames;
+  const maxStA = buildA.stats.stamina;
+  const maxStB = buildB.stats.stamina;
+
+  function drawFrame() {
+    if (tick >= frames.length) {
+      // Show result
+      showBattleResult(result.winA, buildA, buildB, wager);
+      return;
+    }
+    const f = frames[tick];
+
+    // Background
+    ctx.fillStyle = '#0f172a'; ctx.fillRect(0,0,W,H);
+    // Arena ring
+    ctx.beginPath(); ctx.arc(W/2,H/2,R,0,Math.PI*2);
+    ctx.strokeStyle='#334155'; ctx.lineWidth=3; ctx.stroke();
+    // Inner glow
+    const grad = ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,R);
+    grad.addColorStop(0,'rgba(99,102,241,0.04)');
+    grad.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(W/2,H/2,R,0,Math.PI*2); ctx.fill();
+
+    // Positions
+    const progress = tick/frames.length;
+    const angleA = progress * Math.PI * 10;
+    const orbitA = R * 0.5 * (f.stA / Math.max(1,maxStA));
+    const xA = W/2 + Math.cos(angleA)*orbitA;
+    const yA = H/2 + Math.sin(angleA)*orbitA*0.65;
+
+    const angleB = angleA + Math.PI + 0.5;
+    const orbitB = R * 0.5 * (f.stB / Math.max(1,maxStB));
+    const xB = W/2 + Math.cos(angleB)*orbitB;
+    const yB = H/2 + Math.sin(angleB)*orbitB*0.65;
+
+    // Trails
+    ctx.globalAlpha = 0.25;
+    for (let t = 1; t <= 5; t++) {
+      const ta = angleA - t*0.15;
+      const xa = W/2 + Math.cos(ta)*orbitA; const ya = H/2 + Math.sin(ta)*orbitA*0.65;
+      ctx.beginPath(); ctx.arc(xa,ya,TR*(0.3+0.7*f.stA/Math.max(1,maxStA))*((6-t)/6),0,Math.PI*2);
+      ctx.fillStyle='#6366f1'; ctx.fill();
+
+      const tb = angleB - t*0.15;
+      const xb = W/2 + Math.cos(tb)*orbitB; const yb = H/2 + Math.sin(tb)*orbitB*0.65;
+      ctx.beginPath(); ctx.arc(xb,yb,TR*(0.3+0.7*f.stB/Math.max(1,maxStB))*((6-t)/6),0,Math.PI*2);
+      ctx.fillStyle='#f43f5e'; ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Spinx A
+    const radA = TR * (0.4 + 0.6 * f.stA / Math.max(1,maxStA));
+    ctx.beginPath(); ctx.arc(xA,yA,radA,0,Math.PI*2);
+    ctx.fillStyle='#6366f1'; ctx.fill();
+    ctx.strokeStyle='#a5b4fc'; ctx.lineWidth=2; ctx.stroke();
+    // Spinning lines
+    for (let i=0;i<4;i++) {
+      const a = angleA*6 + i*(Math.PI/2);
+      ctx.beginPath(); ctx.moveTo(xA,yA);
+      ctx.lineTo(xA+Math.cos(a)*radA*0.8, yA+Math.sin(a)*radA*0.8);
+      ctx.strokeStyle='rgba(165,180,252,0.6)'; ctx.lineWidth=1.5; ctx.stroke();
+    }
+
+    // Spinx B
+    const radB = TR * (0.4 + 0.6 * f.stB / Math.max(1,maxStB));
+    ctx.beginPath(); ctx.arc(xB,yB,radB,0,Math.PI*2);
+    ctx.fillStyle='#f43f5e'; ctx.fill();
+    ctx.strokeStyle='#fda4af'; ctx.lineWidth=2; ctx.stroke();
+    for (let i=0;i<4;i++) {
+      const a = -angleA*6 + i*(Math.PI/2);
+      ctx.beginPath(); ctx.moveTo(xB,yB);
+      ctx.lineTo(xB+Math.cos(a)*radB*0.8, yB+Math.sin(a)*radB*0.8);
+      ctx.strokeStyle='rgba(253,164,175,0.6)'; ctx.lineWidth=1.5; ctx.stroke();
+    }
+
+    // Sparks on collision
+    const dist = Math.hypot(xA-xB, yA-yB);
+    if (dist < (radA+radB)*1.5) {
+      ctx.fillStyle='#fbbf24';
+      for (let i=0;i<6;i++) {
+        const sx = (xA+xB)/2 + (Math.random()-.5)*30;
+        const sy = (yA+yB)/2 + (Math.random()-.5)*30;
+        ctx.fillRect(sx,sy,3,3);
+      }
+    }
+
+    // Battle bars
+    const barH = document.getElementById('battle-stats-display');
+    barH.innerHTML = `
+      <div class="battle-bar-side">
+        <div style="color:var(--indigo-l);font-weight:700">Your Spinx</div>
+        <div style="font-size:12px;color:var(--muted)">${f.stA} / ${maxStA} STA</div>
+        <div class="battle-bar-wrap"><div style="background:var(--indigo);height:100%;border-radius:4px;width:${(f.stA/Math.max(1,maxStA))*100}%"></div></div>
+        <div class="battle-event">${f.evA||'&nbsp;'}</div>
+      </div>
+      <div style="color:var(--dim);font-size:20px;padding-top:10px">⚔️</div>
+      <div class="battle-bar-side">
+        <div style="color:var(--rose-l);font-weight:700">AI Opponent</div>
+        <div style="font-size:12px;color:var(--muted)">${f.stB} / ${maxStB} STA</div>
+        <div class="battle-bar-wrap"><div style="background:var(--rose);height:100%;border-radius:4px;width:${(f.stB/Math.max(1,maxStB))*100}%"></div></div>
+        <div class="battle-event">${f.evB||'&nbsp;'}</div>
+      </div>`;
+
+    tick++;
+    battleAnimTimer = setTimeout(drawFrame, 35);
+  }
+
+  drawFrame();
+}
+
+function showBattleResult(winA, buildA, buildB, wager) {
+  const won = winA;
+  G.stats.battles++;
+
+  if (won) {
+    G.sprk += wager;
+    G.stats.wins++;
+    G.stats.sprkWon += wager;
+  } else {
+    G.sprk = Math.max(0, G.sprk - wager);
+    G.stats.losses++;
+    G.stats.sprkLost += wager;
+  }
+
+  // Update leaderboard
+  const winRate = G.stats.battles > 0 ? Math.round(G.stats.wins / G.stats.battles * 100) : 0;
+  const existing = G.leaderboard.find(e => e.name === 'You');
+  if (existing) {
+    Object.assign(existing, { wins:G.stats.wins, losses:G.stats.losses, sprkWon:G.stats.sprkWon, winRate });
+  } else {
+    G.leaderboard.push({ name:'You', wins:G.stats.wins, losses:G.stats.losses, sprkWon:G.stats.sprkWon, winRate });
+  }
+  G.leaderboard.sort((a,b) => b.winRate - a.winRate || b.sprkWon - a.sprkWon);
+
+  save();
+  updateSprkDisplay();
+
+  const el = document.getElementById('battle-result');
+  if (won) {
+    el.innerHTML = `<div class="battle-result-banner winner-banner">🏆 You won +${wager} $SPRK!</div>`;
+  } else {
+    el.innerHTML = `<div class="battle-result-banner loser-banner">💀 You lost −${wager} $SPRK</div>`;
+  }
+  document.getElementById('battle-done-btns').style.display = 'block';
+  toast(won ? `Victory! +${wager} $SPRK ⚡` : `Defeated! −${wager} $SPRK`, won ? 'success' : 'error');
+}
+
+function resetBattle() {
+  if (battleAnimTimer) clearTimeout(battleAnimTimer);
+  document.getElementById('battle-setup').style.display = 'block';
+  document.getElementById('battle-arena').style.display = 'none';
+  const canvas = document.getElementById('battle-canvas');
+  canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
+  generateAI();
+  renderBattlePage();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RENDERING
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function renderAll() {
+  renderHomePage();
+  renderShopPage();
+  renderInventoryPage();
+  renderBattlePage();
+  renderLeaderboardPage();
+  updateSprkDisplay();
+}
+
+function updateSprkDisplay() {
+  document.getElementById('sprk-display').textContent = `⚡ ${G.sprk} $SPRK`;
+}
+
+// ── Home ──────────────────────────────────────────────────────────────────────
+function renderHomePage() {
+  const el = document.getElementById('home-stats-content');
+  const totalParts = Object.values(G.parts).reduce((s,a) => s+a.length, 0);
+  const wr = G.stats.battles > 0 ? Math.round(G.stats.wins/G.stats.battles*100) : 0;
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:14px">
+      ${statTile('$SPRK', G.sprk, '⚡', 'var(--gold)')}
+      ${statTile('Wins', G.stats.wins, '🏆', 'var(--green)')}
+      ${statTile('Losses', G.stats.losses, '💀', 'var(--red)')}
+      ${statTile('Win Rate', wr+'%', '📊', 'var(--indigo-l)')}
+      ${statTile('Parts', totalParts, '📦', 'var(--muted)')}
+      ${statTile('Spinx', G.builds.length, '🌀', 'var(--rose-l)')}
+    </div>`;
+}
+
+function statTile(label, value, icon, color) {
+  return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
+    <div style="font-size:24px;margin-bottom:4px">${icon}</div>
+    <div style="font-size:22px;font-weight:800;color:${color}">${value}</div>
+    <div style="font-size:11px;color:var(--muted)">${label}</div>
+  </div>`;
+}
+
+// ── Shop ──────────────────────────────────────────────────────────────────────
+function renderShopPage() {
+  const grid = document.getElementById('pack-grid');
+  grid.innerHTML = CATEGORIES.map((cat, i) => `
+    <div class="pack-card">
+      <div class="pack-icon">${cat.table[0].icon}</div>
+      <div class="pack-name">${cat.label} Pack</div>
+      <div class="pack-desc">${cat.table.map(p=>p.name).join(' · ')}</div>
+      <button class="btn btn-primary" onclick="buyPack(${i})">Open (10 $SPRK)</button>
+    </div>`).join('');
+}
+
+// ── Inventory ─────────────────────────────────────────────────────────────────
+let activePartsTab = 0;
+
+function renderInventoryPage() {
+  // Tabs
+  const tabsEl = document.getElementById('parts-tabs');
+  tabsEl.innerHTML = CATEGORIES.map((cat,i) => `
+    <button class="tab ${i===activePartsTab?'active':''}" onclick="switchPartTab(${i})">
+      ${cat.label} (${G.parts[cat.key].length})
+    </button>`).join('');
+
+  // Parts list
+  const cat = CATEGORIES[activePartsTab];
+  const parts = G.parts[cat.key];
+  const listEl = document.getElementById('parts-list');
+  if (parts.length === 0) {
+    listEl.innerHTML = `<div class="empty-state"><div class="big">${cat.table[0].icon}</div>No ${cat.label}s yet — visit the shop!</div>`;
+  } else {
+    listEl.innerHTML = parts.map(p => {
+      const meta = cat.table[p.tableIndex];
+      const rar  = RARITIES.find(r => r.name === p.rarity);
+      return `<div class="part-badge">
+        <span>${meta.icon} <span class="pname">${meta.name}</span></span>
+        <span style="color:${rar.color};font-size:11px">${rar.stars}</span>
+        <span style="color:var(--dim);font-size:11px">#${p.id}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Parts count
+  document.getElementById('parts-count').textContent =
+    Object.values(G.parts).reduce((s,a)=>s+a.length,0) + ' total parts';
+
+  // Dropdowns
+  const selectors = [
+    ['sel-core','cores',0], ['sel-ring','rings',1], ['sel-weight','weights',2],
+    ['sel-drive','drives',3], ['sel-lock','locks',4]
+  ];
+  selectors.forEach(([id,key,ci]) => {
+    const el = document.getElementById(id);
+    const cur = el.value;
+    el.innerHTML = '<option value="">— choose —</option>' +
+      G.parts[key].map(p => {
+        const meta = CATEGORIES[ci].table[p.tableIndex];
+        const rar  = RARITIES.find(r => r.name === p.rarity);
+        return `<option value="${p.id}">${meta.icon} ${meta.name} (${p.rarity}) #${p.id}</option>`;
+      }).join('');
+    if (cur) el.value = cur;
+    el.addEventListener('change', updateAssemblePreview);
+  });
+  updateAssemblePreview();
+
+  // Builds
+  const buildsEl = document.getElementById('builds-list');
+  document.getElementById('builds-count').textContent = G.builds.length + ' / 10 built';
+  if (G.builds.length === 0) {
+    buildsEl.innerHTML = `<div class="empty-state"><div class="big">🌀</div>No Spinx assembled yet<br><span class="small">Collect one of each part type, then assemble below</span></div>`;
+  } else {
+    buildsEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px;max-height:520px;overflow-y:auto">` +
+      G.builds.map(b => `
+        <div style="display:flex;gap:12px;align-items:start">
+          <div style="flex:1">${renderSpinxCardHTML(b,false)}</div>
+          <button class="btn btn-danger btn-sm" onclick="deleteBuild(${b.id})" title="Disassemble">✕</button>
+        </div>`).join('') + '</div>';
+  }
+}
+
+function switchPartTab(i) { activePartsTab = i; renderInventoryPage(); }
+
+function updateAssemblePreview() {
+  const vals = ['sel-core','sel-ring','sel-weight','sel-drive','sel-lock'].map(id => {
+    const el = document.getElementById(id);
+    return el.value ? parseInt(el.value) : null;
+  });
+  const catKeys = ['cores','rings','weights','drives','locks'];
+  const parts = vals.map((v,i) => v !== null ? G.parts[catKeys[i]].find(p => p.id === v) : null);
+
+  if (parts.every(Boolean)) {
+    const tmpBuild = { core:parts[0], ring:parts[1], weight:parts[2], drive:parts[3], lock:parts[4] };
+    const stats = deriveStats(tmpBuild);
+    document.getElementById('assemble-preview').innerHTML = `
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px">
+        <div style="color:var(--muted);margin-bottom:8px">Predicted stats:</div>
+        ${['attack','defense','stamina','control','speed'].map(s =>
+          `<div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <span>${s.toUpperCase()}</span><span style="color:var(--indigo-l);font-weight:600">${stats[s]}</span>
+          </div>`).join('')}
+      </div>`;
+  } else {
+    document.getElementById('assemble-preview').innerHTML = '';
+  }
+  document.getElementById('assemble-btn').disabled = !parts.every(Boolean) || G.builds.length >= 10;
+}
+
+// ── Battle page ───────────────────────────────────────────────────────────────
+function renderBattlePage() {
+  const sel = document.getElementById('battle-spinx-sel');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— choose —</option>' +
+    G.builds.map(b => `<option value="${b.id}">Spinx #${b.id}</option>`).join('');
+  if (cur) sel.value = cur;
+
+  if (!aiOpponent) generateAI();
+  updateBattlePreview();
+}
+
+function updateBattlePreview() {
+  const sel = document.getElementById('battle-spinx-sel').value;
+  const el  = document.getElementById('battle-your-card');
+  if (sel) {
+    const b = G.builds.find(b => b.id === parseInt(sel));
+    el.innerHTML = b ? renderSpinxCardHTML(b, false) : '';
+  } else {
+    el.innerHTML = `<div class="empty-state"><div>No Spinx selected</div><div class="small muted">Go to Inventory to build one</div></div>`;
+  }
+}
+
+function updateChargeLabel(v) {
+  document.getElementById('charge-label').innerHTML = `Charge: <strong>${v}%</strong>`;
+  document.getElementById('charge-slider').style.accentColor = v > OVERCHARGE_THRESHOLD ? 'var(--red)' : 'var(--indigo)';
+  document.getElementById('charge-warning').textContent =
+    v > OVERCHARGE_THRESHOLD ? `⚠ Overcharge! −stamina penalty` : '';
+}
+
+// ── Leaderboard ───────────────────────────────────────────────────────────────
+function renderLeaderboardPage() {
+  const tbody = document.getElementById('leaderboard-body');
+  if (G.leaderboard.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--dim);padding:32px">No battles yet — go fight!</td></tr>';
+    return;
+  }
+  tbody.innerHTML = G.leaderboard.slice(0,20).map((e,i) => {
+    const cls = i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':'';
+    const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1;
+    return `<tr>
+      <td class="${cls}">${medal}</td>
+      <td class="${cls}">${e.name}</td>
+      <td>${e.wins}</td>
+      <td>${e.losses}</td>
+      <td>${e.winRate}%</td>
+      <td style="color:var(--gold)">${e.sprkWon} $SPRK</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Spinx card HTML helper ────────────────────────────────────────────────────
+function renderSpinxCardHTML(build, selectable) {
+  const core = CATEGORIES[0].table[build.core.tableIndex];
+  const ring = CATEGORIES[1].table[build.ring.tableIndex];
+  const weight = CATEGORIES[2].table[build.weight.tableIndex];
+  const drive = CATEGORIES[3].table[build.drive.tableIndex];
+  const lock = CATEGORIES[4].table[build.lock.tableIndex];
+  const rar = RARITIES.find(r => r.name === build.core.rarity);
+  const stats = build.stats;
+  const maxStat = 350;
+  function bar(val) {
+    const pct = Math.min(100, Math.round(val/maxStat*100));
+    return `<div class="stat-bar-wrap"><div class="stat-bar-fill" style="width:${pct}%"></div></div>`;
+  }
+  return `<div class="spinx-card" style="border-color:${rar.color}">
+    <div class="between" style="margin-bottom:8px">
+      <strong>${core.icon} Spinx #${build.id}</strong>
+      <span style="color:${rar.color};font-size:11px;text-transform:capitalize">${build.core.rarity}</span>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.8">
+      ${core.icon} ${core.name} Core &nbsp;·&nbsp; ${ring.icon} ${ring.name} Ring<br>
+      ${weight.icon} ${weight.name} Weight &nbsp;·&nbsp; ${drive.icon} ${drive.name} Drive<br>
+      ${lock.icon} ${lock.name} Lock
+    </div>
+    <div class="stat-row"><span>ATK</span><span>${stats.attack}</span></div>${bar(stats.attack)}
+    <div class="stat-row"><span>DEF</span><span>${stats.defense}</span></div>${bar(stats.defense)}
+    <div class="stat-row"><span>STA</span><span>${stats.stamina}</span></div>${bar(stats.stamina)}
+    <div class="stat-row"><span>CTL</span><span>${stats.control}</span></div>${bar(stats.control)}
+    <div class="stat-row"><span>SPD</span><span>${stats.speed}</span></div>${bar(stats.speed)}
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(b => {
+    b.classList.toggle('active', b.textContent.trim().toLowerCase() === name || b.getAttribute('onclick')?.includes("'"+name+"'"));
+  });
+  renderAll();
+  if (name === 'battle') {
+    document.getElementById('battle-setup').style.display = 'block';
+    document.getElementById('battle-arena').style.display = 'none';
+    generateAI();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let toastTimer;
+function toast(msg, type='info') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.borderColor = type==='success'?'var(--green)':type==='error'?'var(--red)':'var(--border)';
+  el.style.color = type==='success'?'var(--green)':type==='error'?'var(--red)':'var(--text)';
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+renderAll();
+generateAI();
+</script>
+</body>
+</html>
