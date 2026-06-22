@@ -489,8 +489,9 @@ const OVERCHARGE_PENALTY   = 2;
 // range so damage (~20-200 per tick) gives 15-80 tick battles.
 const STAMINA_SCALE        = 25;
 // Damage divisor applied after the raw atk-def/2 formula.
-// Higher = longer battles. Target: 60-90 ticks for glass-cannon matchups.
-const DAMAGE_SCALE         = 12;
+// Stats sum to ~100-200 per category after rarity scaling, so HP pools are
+// ~2500-5000. DAMAGE_SCALE=2 gives ~40-90 damage/tick → 60-90 tick battles.
+const DAMAGE_SCALE         = 2;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DATA TABLES — mirror programs/spinx/src/state/spinx.rs
@@ -949,13 +950,18 @@ function runBattleAnimation(buildA, chargeA, buildB, chargeB, wager) {
     const ratioA = Math.min(1, f.stA / Math.max(1, maxStA));
     const ratioB = Math.min(1, f.stB / Math.max(1, maxStB));
 
-    // Tops orbit at ~75% of arena radius while healthy; spiral inward only
-    // in the last 25% of stamina so most of the battle happens at full orbit.
-    // During knockout phase the dead top spirals all the way to centre.
-    const deadA = f.stA === 0;
-    const deadB = f.stB === 0;
-    const healthOrbitA = R * 0.72 * (deadA ? Math.max(0, 1 - koProgress) : (ratioA > 0.25 ? 1 : ratioA / 0.25));
-    const healthOrbitB = R * 0.72 * (deadB ? Math.max(0, 1 - koProgress) : (ratioB > 0.25 ? 1 : ratioB / 0.25));
+    // KO or tiebreak loser: either top that reached 0, or (for time-limit draws)
+    // whichever has lower remaining HP.
+    const lastFrame = frames[frames.length - 1];
+    const hardKoA = lastFrame.stA === 0;
+    const hardKoB = lastFrame.stB === 0;
+    const tiebreak = !hardKoA && !hardKoB;
+    const loserA = hardKoA || (tiebreak && !result.winA);
+    const loserB = hardKoB || (tiebreak && result.winA);
+
+    // Dead/losing top spirals inward during KO phase.
+    const healthOrbitA = R * 0.72 * (loserA && inKO ? Math.max(0, 1 - koProgress) : (ratioA > 0.25 ? 1 : ratioA / 0.25));
+    const healthOrbitB = R * 0.72 * (loserB && inKO ? Math.max(0, 1 - koProgress) : (ratioB > 0.25 ? 1 : ratioB / 0.25));
 
     // Angular speed: faster when healthy, wobbles when low hp
     const baseSpeedA = 0.10 + 0.04 * ratioA;
