@@ -235,7 +235,61 @@
     .grid-2, .grid-3, .form-grid { grid-template-columns: 1fr; }
     .battle-bars { flex-direction: column; align-items: center; }
   }
+
+  /* ── Multiplayer / Chat additions ───────────────────────────────────────── */
+  #chat-panel {
+    position: fixed; right: 0; top: 56px; bottom: 0; width: 300px;
+    background: var(--surface); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; z-index: 90;
+    transform: translateX(100%); transition: transform .25s;
+  }
+  #chat-panel.open { transform: translateX(0); }
+  .chat-toggle {
+    position: fixed; right: 20px; bottom: 24px; width: 48px; height: 48px;
+    border-radius: 50%; background: var(--indigo); border: none; cursor: pointer;
+    font-size: 22px; z-index: 95; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 16px rgba(99,102,241,0.4);
+  }
+  .chat-msgs {
+    flex: 1; overflow-y: auto; padding: 12px; display: flex;
+    flex-direction: column; gap: 6px;
+  }
+  .chat-msg { font-size: 12px; line-height: 1.4; }
+  .chat-msg.mine { text-align: right; }
+  .chat-msg .cm-user { color: var(--indigo-l); font-weight: 600; font-size: 11px; }
+  .chat-msg.mine .cm-user { color: var(--gold); }
+  .chat-msg .cm-text { color: var(--text); }
+  .chat-msg .cm-ts { color: var(--dim); font-size: 10px; }
+  .chat-input-row { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--border); }
+  .chat-input-row input { flex: 1; }
+  .player-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap: 12px; }
+  .player-slot { border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .player-slot.filled { border-color: var(--indigo); }
+  .player-slot.empty { border-style: dashed; opacity: .5; }
+  .player-slot.ready { border-color: var(--green); }
+  .lobby-entry {
+    background: var(--surface2); border-radius: 10px; padding: 14px;
+    display: flex; justify-content: space-between; align-items: center;
+    border: 1px solid var(--border); margin-bottom: 10px;
+  }
+  .status-open { color: var(--green); }
+  .status-starting { color: var(--gold); }
+  .status-inProgress { color: var(--indigo-l); }
+  .online-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; }
+  .setup-notice { border: 1px dashed var(--border); border-radius: 12px; padding: 32px; text-align: center; }
+  .username-chip {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 20px; padding: 4px 12px; font-size: 12px; color: var(--muted);
+  }
+  #lobby-nav-btn-wrap { position: relative; display: inline-block; }
+  .lobby-count-badge {
+    position: absolute; top: -4px; right: -4px;
+    background: var(--rose); color: #fff; border-radius: 10px;
+    font-size: 9px; font-weight: 700; padding: 1px 5px; line-height: 1.4;
+  }
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 </head>
 <body>
 
@@ -248,8 +302,16 @@
     <button class="nav-btn" onclick="showPage('inventory')">Inventory</button>
     <button class="nav-btn" onclick="showPage('battle')">Battle</button>
     <button class="nav-btn" onclick="showPage('leaderboard')">Leaderboard</button>
+    <button class="nav-btn" onclick="showPage('profile')">Profile</button>
+    <div id="lobby-nav-btn-wrap" style="display:inline-block;position:relative">
+      <button class="nav-btn" onclick="showPage('lobby-list')" id="lobby-nav-btn">Lobby</button>
+      <span class="lobby-count-badge" id="lobby-count-badge" style="display:none"></span>
+    </div>
   </div>
-  <span class="sprk-badge" id="sprk-display">⚡ 100 $SPRK</span>
+  <div style="display:flex;gap:10px;align-items:center">
+    <span class="sprk-badge" id="sprk-display">⚡ 100 $SPRK</span>
+    <span class="username-chip" id="username-display">Anonymous</span>
+  </div>
 </nav>
 
 <!-- ── Pages ───────────────────────────────────────────────────────────────── -->
@@ -455,6 +517,163 @@
     </div>
   </div>
 
+  <!-- PROFILE -->
+  <div class="page" id="page-profile">
+    <h2>Profile</h2>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Identity</h3>
+        <div class="form-row">
+          <label>User ID</label>
+          <div style="font-family:monospace;font-size:12px;color:var(--muted);padding:6px 0" id="profile-userid"></div>
+        </div>
+        <div class="form-row">
+          <label>Username</label>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="username-input" placeholder="Enter username" maxlength="20">
+            <button class="btn btn-primary" onclick="saveUsername()">Save</button>
+          </div>
+        </div>
+        <div id="profile-firebase-status" style="margin-top:12px;font-size:12px;color:var(--muted)"></div>
+      </div>
+      <div class="card">
+        <h3>Stats</h3>
+        <div id="profile-stats"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOBBY LIST -->
+  <div class="page" id="page-lobby-list">
+    <div class="between" style="margin-bottom:20px">
+      <h2 style="margin:0">Multiplayer Lobby</h2>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span class="online-dot"></span>
+        <span class="muted small" id="lobby-online-count">Online</span>
+      </div>
+    </div>
+    <div id="lobby-list-firebase-notice" style="display:none">
+      <div class="setup-notice">
+        <div style="font-size:32px;margin-bottom:12px">🔥</div>
+        <h3 style="margin-bottom:8px">Firebase not configured</h3>
+        <p class="muted small" style="margin-bottom:16px">To enable multiplayer, add your Firebase config to the FIREBASE_CONFIG object in the script section.</p>
+        <ol style="text-align:left;color:var(--muted);font-size:12px;line-height:2;max-width:380px;margin:0 auto">
+          <li>Go to <strong style="color:var(--text)">console.firebase.google.com</strong></li>
+          <li>Create a project → Add web app</li>
+          <li>Enable Realtime Database</li>
+          <li>Copy the config object into <code style="color:var(--indigo-l)">FIREBASE_CONFIG</code></li>
+        </ol>
+      </div>
+    </div>
+    <div id="lobby-list-content">
+      <div class="grid-2 section-gap">
+        <div class="card">
+          <h3>Create Lobby</h3>
+          <div class="form-row">
+            <label>Lobby Name</label>
+            <input type="text" id="create-lobby-name" placeholder="My Lobby" maxlength="30">
+          </div>
+          <div class="form-grid">
+            <div class="form-row">
+              <label>Max Players (2–8)</label>
+              <select id="create-lobby-maxplayers">
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4" selected>4</option>
+                <option value="6">6</option>
+                <option value="8">8</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label>Wager ($SPRK)</label>
+              <input type="number" id="create-lobby-wager" value="5" min="0" max="500">
+            </div>
+          </div>
+          <div class="form-row">
+            <label>Your Spinx</label>
+            <select id="create-lobby-spinx"><option value="">— choose —</option></select>
+          </div>
+          <div class="form-row">
+            <label>Charge Level: <span id="create-lobby-charge-label">70%</span></label>
+            <input type="range" id="create-lobby-charge" min="0" max="100" value="70"
+              oninput="document.getElementById('create-lobby-charge-label').textContent=this.value+'%'">
+          </div>
+          <button class="btn btn-primary" onclick="createLobby()" style="width:100%">🎮 Create Lobby</button>
+        </div>
+        <div class="card">
+          <h3>Open Lobbies</h3>
+          <div id="lobby-list-entries">
+            <div class="empty-state"><div class="big">🎮</div>No open lobbies yet<br><span class="small">Create one!</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOBBY ROOM -->
+  <div class="page" id="page-lobby-room">
+    <div class="between" style="margin-bottom:20px">
+      <div style="display:flex;gap:12px;align-items:center">
+        <button class="btn btn-secondary btn-sm" onclick="leaveLobby()">← Back</button>
+        <h2 style="margin:0" id="lobby-room-name">Lobby</h2>
+        <span class="badge" id="lobby-room-status-badge"></span>
+      </div>
+      <button class="btn btn-primary" onclick="startBattleFromLobby()" id="lobby-start-btn" style="display:none">⚡ Start Battle</button>
+    </div>
+    <div class="grid-2">
+      <div>
+        <div class="card section-gap">
+          <h3>Players</h3>
+          <div class="player-slots" id="lobby-player-slots"></div>
+          <div style="margin-top:16px;display:flex;gap:10px">
+            <button class="btn btn-secondary" onclick="toggleReady()" id="ready-btn">✓ Ready Up</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Lobby Info</h3>
+          <div id="lobby-room-info"></div>
+        </div>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;height:500px">
+        <h3>Lobby Chat</h3>
+        <div class="chat-msgs" id="lobby-chat-msgs"></div>
+        <div class="chat-input-row">
+          <input type="text" id="lobby-chat-input" placeholder="Say something..." maxlength="200"
+            onkeydown="if(event.key==='Enter')sendLobbyChat()">
+          <button class="btn btn-primary btn-sm" onclick="sendLobbyChat()">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MP BATTLE -->
+  <div class="page" id="page-mp-battle">
+    <div class="between" style="margin-bottom:16px">
+      <h2 style="margin:0">Multiplayer Battle</h2>
+      <div style="display:flex;gap:10px" id="mp-battle-done-btns" style="display:none">
+        <button class="btn btn-secondary" onclick="showPage('lobby-list')">🎮 Find New Battle</button>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div>
+        <div id="mp-players-banner" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"></div>
+        <div id="mp-countdown-display" style="font-size:96px;font-weight:900;color:var(--indigo);text-align:center"></div>
+        <canvas id="mp-battle-canvas" width="500" height="500" style="border-radius:12px;border:1px solid var(--border);display:block;margin:0 auto"></canvas>
+        <div class="battle-bars" id="mp-battle-stats-display"></div>
+        <div id="mp-battle-result"></div>
+      </div>
+      <div class="card" style="display:flex;flex-direction:column;height:600px">
+        <h3>Battle Chat</h3>
+        <div class="chat-msgs" id="mp-chat-msgs"></div>
+        <div class="chat-input-row">
+          <input type="text" id="mp-chat-input" placeholder="Trash talk..." maxlength="200"
+            onkeydown="if(event.key==='Enter')sendMpChat()">
+          <button class="btn btn-primary btn-sm" onclick="sendMpChat()">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </main>
 
 <!-- ── Pack Reveal Overlay ──────────────────────────────────────────────────── -->
@@ -470,6 +689,24 @@
 
 <!-- ── Toast ────────────────────────────────────────────────────────────────── -->
 <div id="toast"></div>
+
+<!-- ── Global Chat ──────────────────────────────────────────────────────────── -->
+<button class="chat-toggle" onclick="toggleChatPanel()" title="Global Chat">💬</button>
+<div id="chat-panel">
+  <div style="padding:12px;border-bottom:1px solid var(--border);display:flex;gap:6px;align-items:center">
+    <div class="tabs" style="margin:0;flex:1">
+      <button class="tab active" id="chat-tab-global" onclick="switchChatTab('global')">Global</button>
+      <button class="tab" id="chat-tab-lobby" onclick="switchChatTab('lobby')">Lobby</button>
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="toggleChatPanel()">✕</button>
+  </div>
+  <div class="chat-msgs" id="global-chat-msgs"></div>
+  <div class="chat-input-row">
+    <input type="text" id="global-chat-input" placeholder="Message..." maxlength="200"
+      onkeydown="if(event.key==='Enter')sendGlobalChat()">
+    <button class="btn btn-primary btn-sm" onclick="sendGlobalChat()">Send</button>
+  </div>
+</div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1437,6 +1674,765 @@ function toast(msg, type='info') {
 
 renderAll();
 generateAI();
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FIREBASE CONFIG (replace with your own)
+// ═══════════════════════════════════════════════════════════════════════════════
+// ══ FIREBASE CONFIG — paste your config from console.firebase.google.com ══
+// Example:
+// const FIREBASE_CONFIG = {
+//   apiKey: "AIza...",
+//   authDomain: "your-project.firebaseapp.com",
+//   databaseURL: "https://your-project-default-rtdb.firebaseio.com",
+//   projectId: "your-project",
+//   storageBucket: "your-project.appspot.com",
+//   messagingSenderId: "123456789",
+//   appId: "1:123456789:web:abc123"
+// };
+const FIREBASE_CONFIG = {
+  // Paste your Firebase config here from console.firebase.google.com
+  // apiKey: "...", authDomain: "...", databaseURL: "...", projectId: "..."
+};
+
+let db = null;
+let currentUser = { id: null, username: 'Anonymous' };
+let currentLobbyId = null;
+let chatPanelOpen = false;
+let chatTab = 'global';
+let unsubLobbyList = null;
+let unsubLobbyRoom = null;
+let unsubGlobalChat = null;
+let unsubLobbyChat = null;
+let mpBattleAnimTimer = null;
+let currentLobbyData = null;
+let isReady = false;
+
+// ─── UUID helper ──────────────────────────────────────────────────────────────
+function genUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
+// ─── Firebase init ────────────────────────────────────────────────────────────
+function initFirebase() {
+  if (!FIREBASE_CONFIG.databaseURL) return;
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.database();
+    console.log('[SPINX] Firebase connected');
+    subscribeGlobalChat();
+  } catch(e) {
+    console.warn('[SPINX] Firebase init failed:', e);
+    db = null;
+  }
+}
+
+function isFirebaseReady() { return !!db; }
+
+// ─── User init ────────────────────────────────────────────────────────────────
+function initUser() {
+  let uid = localStorage.getItem('spinx_user_id');
+  if (!uid) { uid = genUUID(); localStorage.setItem('spinx_user_id', uid); }
+  const username = localStorage.getItem('spinx_username') || 'Anonymous';
+  currentUser = { id: uid, username };
+  document.getElementById('username-display').textContent = username;
+  if (db) {
+    db.ref('users/' + uid).set({ username, userId: uid, joinedAt: Date.now() }).catch(() => {});
+  }
+}
+
+// ─── Profile page ─────────────────────────────────────────────────────────────
+function renderProfilePage() {
+  const el = document.getElementById('profile-userid');
+  if (el) el.textContent = currentUser.id ? currentUser.id.substring(0, 24) + '...' : 'Loading...';
+  const input = document.getElementById('username-input');
+  if (input) input.value = currentUser.username !== 'Anonymous' ? currentUser.username : '';
+  const statsEl = document.getElementById('profile-stats');
+  if (statsEl) {
+    const wr = G.stats.battles > 0 ? Math.round(G.stats.wins / G.stats.battles * 100) : 0;
+    statsEl.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${profileStat('$SPRK Balance', G.sprk + ' $SPRK', 'var(--gold)')}
+        ${profileStat('Battles', G.stats.battles, 'var(--text)')}
+        ${profileStat('Wins', G.stats.wins, 'var(--green)')}
+        ${profileStat('Losses', G.stats.losses, 'var(--red)')}
+        ${profileStat('Win Rate', wr + '%', 'var(--indigo-l)')}
+        ${profileStat('$SPRK Won', G.stats.sprkWon, 'var(--gold)')}
+      </div>`;
+  }
+  const fbStatus = document.getElementById('profile-firebase-status');
+  if (fbStatus) {
+    fbStatus.textContent = isFirebaseReady()
+      ? '🟢 Firebase connected — multiplayer enabled'
+      : '⚪ Firebase not configured — multiplayer unavailable';
+  }
+}
+
+function profileStat(label, value, color) {
+  return `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+    <span style="color:var(--muted)">${label}</span>
+    <span style="font-weight:600;color:${color}">${value}</span>
+  </div>`;
+}
+
+function saveUsername() {
+  const input = document.getElementById('username-input');
+  const name = (input.value || '').trim();
+  if (!name || name.length < 2) { toast('Username must be at least 2 characters', 'error'); return; }
+  if (name.length > 20) { toast('Username too long (max 20)', 'error'); return; }
+  currentUser.username = name;
+  localStorage.setItem('spinx_username', name);
+  document.getElementById('username-display').textContent = name;
+  if (db && currentUser.id) {
+    db.ref('users/' + currentUser.id).update({ username: name }).catch(() => {});
+  }
+  toast('Username saved!', 'success');
+  renderProfilePage();
+}
+
+// ─── Lobby list page ──────────────────────────────────────────────────────────
+function renderLobbyListPage() {
+  const notice = document.getElementById('lobby-list-firebase-notice');
+  const content = document.getElementById('lobby-list-content');
+  if (!isFirebaseReady()) {
+    notice.style.display = 'block';
+    content.style.display = 'none';
+    return;
+  }
+  notice.style.display = 'none';
+  content.style.display = 'block';
+
+  // Populate spinx select
+  const sel = document.getElementById('create-lobby-spinx');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— choose —</option>' +
+    G.builds.map(b => `<option value="${b.id}">Spinx #${b.id}</option>`).join('');
+  if (cur) sel.value = cur;
+
+  subscribeLobbies();
+}
+
+function subscribeLobbies() {
+  if (!db) return;
+  if (unsubLobbyList) { unsubLobbyList(); unsubLobbyList = null; }
+  const ref = db.ref('lobbies');
+  const handler = ref.on('value', snap => {
+    const lobbies = snap.val() || {};
+    const now = Date.now();
+    const entries = Object.values(lobbies).filter(l =>
+      l.status === 'open' || l.status === 'starting'
+      && (now - l.createdAt) < 30 * 60 * 1000
+    ).sort((a, b) => b.createdAt - a.createdAt);
+
+    const el = document.getElementById('lobby-list-entries');
+    if (!el) return;
+    if (entries.length === 0) {
+      el.innerHTML = '<div class="empty-state"><div class="big">🎮</div>No open lobbies<br><span class="small">Create one!</span></div>';
+      return;
+    }
+    el.innerHTML = entries.map(lobby => {
+      const playerCount = Object.keys(lobby.players || {}).length;
+      const statusClass = 'status-' + lobby.status;
+      const isIn = lobby.players && lobby.players[currentUser.id];
+      return `<div class="lobby-entry">
+        <div>
+          <div style="font-weight:700;margin-bottom:4px">${escHtml(lobby.name)}</div>
+          <div class="small muted">by ${escHtml(lobby.creatorName)} · Wager: ${lobby.wager} $SPRK</div>
+          <div class="small"><span class="${statusClass}">${lobby.status}</span> · ${playerCount}/${lobby.maxPlayers} players</div>
+        </div>
+        <button class="btn ${isIn ? 'btn-secondary' : 'btn-primary'} btn-sm" onclick="joinLobby('${lobby.id}')">
+          ${isIn ? 'Rejoin' : 'Join'}
+        </button>
+      </div>`;
+    }).join('');
+  });
+  unsubLobbyList = () => ref.off('value', handler);
+}
+
+function createLobby() {
+  if (!isFirebaseReady()) { toast('Firebase not configured', 'error'); return; }
+  if (!currentUser.id) { toast('User not initialized', 'error'); return; }
+  const name = document.getElementById('create-lobby-name').value.trim() || currentUser.username + "'s Lobby";
+  const maxPlayers = parseInt(document.getElementById('create-lobby-maxplayers').value) || 4;
+  const wager = parseInt(document.getElementById('create-lobby-wager').value) || 5;
+  const spinxId = document.getElementById('create-lobby-spinx').value;
+  const charge = parseInt(document.getElementById('create-lobby-charge').value) || 70;
+
+  if (!spinxId) { toast('Select a Spinx for battle!', 'error'); return; }
+  const build = G.builds.find(b => b.id === parseInt(spinxId));
+  if (!build) { toast('Invalid Spinx', 'error'); return; }
+
+  const lobbyId = genUUID().substring(0, 12);
+  const lobbyData = {
+    id: lobbyId, name: escHtml(name), creatorId: currentUser.id,
+    creatorName: currentUser.username, maxPlayers, status: 'open',
+    wager, createdAt: Date.now(),
+    players: {
+      [currentUser.id]: {
+        username: currentUser.username, spinxId: parseInt(spinxId),
+        charge, ready: false
+      }
+    }
+  };
+
+  db.ref('lobbies/' + lobbyId).set(lobbyData).then(() => {
+    // onDisconnect: remove player
+    db.ref('lobbies/' + lobbyId + '/players/' + currentUser.id).onDisconnect().remove();
+    currentLobbyId = lobbyId;
+    enterLobbyRoom(lobbyId);
+  }).catch(e => toast('Error creating lobby: ' + e.message, 'error'));
+}
+
+function joinLobby(lobbyId) {
+  if (!isFirebaseReady()) { toast('Firebase not configured', 'error'); return; }
+  if (!currentUser.id) { toast('User not initialized', 'error'); return; }
+
+  const build = G.builds[0]; // use first build by default
+  if (!build) { toast('Build a Spinx first!', 'error'); return; }
+
+  const playerData = {
+    username: currentUser.username,
+    spinxId: build.id, charge: 70, ready: false
+  };
+
+  db.ref('lobbies/' + lobbyId).once('value').then(snap => {
+    const lobby = snap.val();
+    if (!lobby) { toast('Lobby not found', 'error'); return; }
+    const playerCount = Object.keys(lobby.players || {}).length;
+    if (playerCount >= lobby.maxPlayers && !lobby.players[currentUser.id]) {
+      toast('Lobby is full!', 'error'); return;
+    }
+    return db.ref('lobbies/' + lobbyId + '/players/' + currentUser.id).set(playerData);
+  }).then(() => {
+    db.ref('lobbies/' + lobbyId + '/players/' + currentUser.id).onDisconnect().remove();
+    currentLobbyId = lobbyId;
+    enterLobbyRoom(lobbyId);
+  }).catch(e => { if (e) toast('Error joining lobby: ' + e.message, 'error'); });
+}
+
+function leaveLobby() {
+  if (!db || !currentLobbyId) { showPage('lobby-list'); return; }
+  const lobbyId = currentLobbyId;
+  db.ref('lobbies/' + lobbyId).once('value').then(snap => {
+    const lobby = snap.val();
+    if (!lobby) return;
+    if (lobby.creatorId === currentUser.id) {
+      // Creator leaves: cancel lobby
+      return db.ref('lobbies/' + lobbyId).update({ status: 'cancelled' });
+    } else {
+      return db.ref('lobbies/' + lobbyId + '/players/' + currentUser.id).remove();
+    }
+  }).then(() => {
+    currentLobbyId = null;
+    currentLobbyData = null;
+    isReady = false;
+    if (unsubLobbyRoom) { unsubLobbyRoom(); unsubLobbyRoom = null; }
+    if (unsubLobbyChat) { unsubLobbyChat(); unsubLobbyChat = null; }
+    updateLobbyNavBadge();
+    showPage('lobby-list');
+  }).catch(() => {
+    currentLobbyId = null;
+    showPage('lobby-list');
+  });
+}
+
+// ─── Lobby room ───────────────────────────────────────────────────────────────
+function enterLobbyRoom(lobbyId) {
+  currentLobbyId = lobbyId;
+  isReady = false;
+  showPage('lobby-room');
+  subscribeLobbyRoom(lobbyId);
+  subscribeLobbyChat(lobbyId);
+}
+
+function subscribeLobbyRoom(lobbyId) {
+  if (!db) return;
+  if (unsubLobbyRoom) { unsubLobbyRoom(); unsubLobbyRoom = null; }
+  const ref = db.ref('lobbies/' + lobbyId);
+  const handler = ref.on('value', snap => {
+    const data = snap.val();
+    if (!data) { showPage('lobby-list'); return; }
+    if (data.status === 'cancelled' && data.creatorId !== currentUser.id) {
+      toast('Lobby was cancelled by the creator', 'error');
+      currentLobbyId = null;
+      showPage('lobby-list');
+      return;
+    }
+    currentLobbyData = data;
+    renderLobbyRoom(data);
+    updateLobbyNavBadge();
+    if (data.status === 'inProgress') {
+      startMpBattle(data);
+    }
+  });
+  unsubLobbyRoom = () => ref.off('value', handler);
+}
+
+function renderLobbyRoom(lobby) {
+  const nameEl = document.getElementById('lobby-room-name');
+  if (nameEl) nameEl.textContent = lobby.name;
+
+  const statusEl = document.getElementById('lobby-room-status-badge');
+  if (statusEl) {
+    statusEl.textContent = lobby.status;
+    statusEl.className = 'badge status-' + lobby.status;
+  }
+
+  const startBtn = document.getElementById('lobby-start-btn');
+  if (startBtn) {
+    startBtn.style.display = (lobby.creatorId === currentUser.id && lobby.status === 'open') ? 'inline-flex' : 'none';
+    const players = Object.values(lobby.players || {});
+    const allReady = players.length >= 2 && players.every(p => p.ready);
+    startBtn.disabled = !allReady;
+  }
+
+  const readyBtn = document.getElementById('ready-btn');
+  if (readyBtn) {
+    const myPlayer = (lobby.players || {})[currentUser.id];
+    isReady = myPlayer ? myPlayer.ready : false;
+    readyBtn.textContent = isReady ? '✓ Ready (click to unready)' : '✓ Ready Up';
+    readyBtn.className = isReady ? 'btn btn-gold' : 'btn btn-secondary';
+  }
+
+  const infoEl = document.getElementById('lobby-room-info');
+  if (infoEl) {
+    infoEl.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:13px">
+        <div class="between"><span class="muted">Creator</span><span>${escHtml(lobby.creatorName)}</span></div>
+        <div class="between"><span class="muted">Wager</span><span style="color:var(--gold)">${lobby.wager} $SPRK</span></div>
+        <div class="between"><span class="muted">Max Players</span><span>${lobby.maxPlayers}</span></div>
+        <div class="between"><span class="muted">Status</span><span class="status-${lobby.status}">${lobby.status}</span></div>
+      </div>`;
+  }
+
+  const slotsEl = document.getElementById('lobby-player-slots');
+  if (!slotsEl) return;
+  const players = lobby.players || {};
+  const playerList = Object.entries(players);
+  let html = '';
+  for (let i = 0; i < lobby.maxPlayers; i++) {
+    if (i < playerList.length) {
+      const [uid, p] = playerList[i];
+      const isMe = uid === currentUser.id;
+      const build = G.builds.find(b => b.id === p.spinxId);
+      const spinxName = build ? `Spinx #${build.id}` : 'Spinx #?';
+      const slotClass = p.ready ? 'player-slot filled ready' : 'player-slot filled';
+      html += `<div class="${slotClass}">
+        <div class="between" style="margin-bottom:6px">
+          <strong>${escHtml(p.username)}${isMe ? ' (you)' : ''}</strong>
+          ${p.ready ? '<span style="color:var(--green);font-size:11px">✓ Ready</span>' : '<span style="color:var(--muted);font-size:11px">Not ready</span>'}
+        </div>
+        <div class="small muted">${spinxName} · ${p.charge}% charge</div>
+        ${uid === lobby.creatorId ? '<div class="small" style="color:var(--gold);margin-top:4px">👑 Creator</div>' : ''}
+      </div>`;
+    } else {
+      html += `<div class="player-slot empty" style="display:flex;align-items:center;justify-content:center;min-height:80px">
+        <span style="color:var(--dim);font-size:24px">＋</span>
+      </div>`;
+    }
+  }
+  slotsEl.innerHTML = html;
+}
+
+function toggleReady() {
+  if (!db || !currentLobbyId || !currentUser.id) return;
+  const newReady = !isReady;
+  db.ref(`lobbies/${currentLobbyId}/players/${currentUser.id}/ready`).set(newReady)
+    .catch(e => toast('Error: ' + e.message, 'error'));
+}
+
+function startBattleFromLobby() {
+  if (!db || !currentLobbyId) return;
+  if (!currentLobbyData) return;
+  const players = Object.values(currentLobbyData.players || {});
+  if (players.length < 2) { toast('Need at least 2 players!', 'error'); return; }
+  if (!players.every(p => p.ready)) { toast('All players must be ready!', 'error'); return; }
+
+  db.ref('lobbies/' + currentLobbyId).update({
+    status: 'inProgress',
+    battleSeed: Date.now()
+  }).catch(e => toast('Error starting battle: ' + e.message, 'error'));
+}
+
+function updateLobbyNavBadge() {
+  const badge = document.getElementById('lobby-count-badge');
+  if (!badge) return;
+  if (currentLobbyId && currentLobbyData) {
+    const count = Object.keys(currentLobbyData.players || {}).length;
+    badge.textContent = count + '/' + currentLobbyData.maxPlayers;
+    badge.style.display = 'block';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// ─── Chat ─────────────────────────────────────────────────────────────────────
+function toggleChatPanel() {
+  chatPanelOpen = !chatPanelOpen;
+  const panel = document.getElementById('chat-panel');
+  if (chatPanelOpen) { panel.classList.add('open'); }
+  else { panel.classList.remove('open'); }
+}
+
+function switchChatTab(tab) {
+  chatTab = tab;
+  document.getElementById('chat-tab-global').classList.toggle('active', tab === 'global');
+  document.getElementById('chat-tab-lobby').classList.toggle('active', tab === 'lobby');
+  const globalMsgs = document.getElementById('global-chat-msgs');
+  const lobbyMsgs = document.getElementById('lobby-chat-msgs-panel');
+  // Show/hide the correct message area
+  if (globalMsgs) globalMsgs.style.display = tab === 'global' ? 'flex' : 'none';
+  if (lobbyMsgs) lobbyMsgs.style.display = tab === 'lobby' ? 'flex' : 'none';
+}
+
+function subscribeGlobalChat() {
+  if (!db) return;
+  if (unsubGlobalChat) { unsubGlobalChat(); unsubGlobalChat = null; }
+  const ref = db.ref('chat/global').limitToLast(50);
+  const handler = ref.on('value', snap => {
+    const msgs = snap.val() || {};
+    const el = document.getElementById('global-chat-msgs');
+    if (!el) return;
+    const sorted = Object.values(msgs).sort((a, b) => a.ts - b.ts);
+    el.innerHTML = '';
+    sorted.forEach(m => appendChatMessage(el, m));
+  });
+  unsubGlobalChat = () => ref.off('value', handler);
+}
+
+function subscribeLobbyChat(lobbyId) {
+  if (!db) return;
+  if (unsubLobbyChat) { unsubLobbyChat(); unsubLobbyChat = null; }
+
+  const handler = (ref, el) => {
+    if (!el) return;
+    const fn = ref.on('value', snap => {
+      const msgs = snap.val() || {};
+      el.innerHTML = '';
+      Object.values(msgs).sort((a, b) => a.ts - b.ts).forEach(m => appendChatMessage(el, m));
+    });
+    return () => ref.off('value', fn);
+  };
+
+  const ref = db.ref('chat/lobby/' + lobbyId).limitToLast(50);
+  const loopbackEl = document.getElementById('lobby-chat-msgs');
+  const mpEl = document.getElementById('mp-chat-msgs');
+
+  // Subscribe to lobby-chat-msgs (lobby room page)
+  const unsub1 = handler(ref, loopbackEl);
+  // Also subscribe to mp-chat-msgs (mp battle page)
+  const ref2 = db.ref('chat/lobby/' + lobbyId).limitToLast(50);
+  const unsub2 = handler(ref2, mpEl);
+
+  unsubLobbyChat = () => { if (unsub1) unsub1(); if (unsub2) unsub2(); };
+}
+
+function appendChatMessage(container, msg) {
+  const mine = msg.userId === currentUser.id;
+  const d = new Date(msg.ts);
+  const time = d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+  const div = document.createElement('div');
+  div.className = 'chat-msg' + (mine ? ' mine' : '');
+  div.innerHTML = `<span class="cm-user">${escHtml(msg.username)}</span> `
+    + `<span class="cm-text">${escHtml(msg.text)}</span> `
+    + `<span class="cm-ts">${time}</span>`;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function sendGlobalChat() {
+  if (!db) { toast('Firebase not configured', 'error'); return; }
+  const input = document.getElementById('global-chat-input');
+  const text = (input.value || '').trim();
+  if (!text) return;
+  input.value = '';
+  const msg = { userId: currentUser.id, username: currentUser.username, text, ts: Date.now() };
+  db.ref('chat/global').push(msg).catch(e => toast('Error: ' + e.message, 'error'));
+}
+
+function sendLobbyChat() {
+  if (!db || !currentLobbyId) { toast('Not in a lobby', 'error'); return; }
+  const input = document.getElementById('lobby-chat-input');
+  const text = (input.value || '').trim();
+  if (!text) return;
+  input.value = '';
+  const msg = { userId: currentUser.id, username: currentUser.username, text, ts: Date.now() };
+  db.ref('chat/lobby/' + currentLobbyId).push(msg).catch(e => toast('Error: ' + e.message, 'error'));
+}
+
+function sendMpChat() {
+  if (!db || !currentLobbyId) return;
+  const input = document.getElementById('mp-chat-input');
+  const text = (input.value || '').trim();
+  if (!text) return;
+  input.value = '';
+  const msg = { userId: currentUser.id, username: currentUser.username, text, ts: Date.now() };
+  db.ref('chat/lobby/' + currentLobbyId).push(msg).catch(e => toast('Error: ' + e.message, 'error'));
+}
+
+// ─── MP Battle ────────────────────────────────────────────────────────────────
+function startMpBattle(lobbyData) {
+  if (!lobbyData || !lobbyData.battleSeed) return;
+  showPage('mp-battle');
+
+  const players = Object.entries(lobbyData.players || {});
+  const banner = document.getElementById('mp-players-banner');
+  if (banner) {
+    banner.innerHTML = players.map(([uid, p]) => {
+      const isMe = uid === currentUser.id;
+      return `<div style="background:var(--surface2);border:1px solid ${isMe ? 'var(--indigo)' : 'var(--border)'};border-radius:8px;padding:8px 14px;font-size:12px">
+        <span class="online-dot" style="margin-right:6px"></span>
+        <strong>${escHtml(p.username)}</strong>${isMe ? ' (you)' : ''}
+      </div>`;
+    }).join('');
+  }
+
+  // For 2-player battle: take first two players
+  if (players.length < 2) return;
+  const [uidA, pA] = players[0];
+  const [uidB, pB] = players[1];
+
+  const buildA = G.builds.find(b => b.id === pA.spinxId) || G.builds[0];
+  const buildB = G.builds.find(b => b.id === pB.spinxId) || (G.builds[1] || buildA);
+
+  if (!buildA) { toast('Could not find battle Spinx', 'error'); return; }
+
+  const chargeA = pA.charge || 70;
+  const chargeB = pB.charge || 70;
+  const seed = lobbyData.battleSeed;
+
+  const cd = document.getElementById('mp-countdown-display');
+  let count = 3;
+  if (cd) cd.textContent = count;
+  const cdInterval = setInterval(() => {
+    count--;
+    if (count === 0) {
+      if (cd) cd.textContent = 'FIGHT!';
+      clearInterval(cdInterval);
+      setTimeout(() => {
+        if (cd) cd.textContent = '';
+        runMpBattleAnimation(buildA, chargeA, buildB, chargeB, seed, pA.username, pB.username, lobbyData, uidA);
+      }, 600);
+    } else {
+      if (cd) cd.textContent = count;
+    }
+  }, 700);
+}
+
+function runMpBattleAnimation(buildA, chargeA, buildB, chargeB, seed, nameA, nameB, lobbyData, uidA) {
+  if (mpBattleAnimTimer) cancelAnimationFrame(mpBattleAnimTimer);
+  const result = simulateBattle(buildA, chargeA, buildB, chargeB, seed);
+
+  const canvas = document.getElementById('mp-battle-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const R = 210, TR = 20;
+
+  let tick = 0;
+  const frames = result.frames;
+  const maxStA = result.initStA, maxStB = result.initStB;
+  let angleA = 0, angleB = Math.PI;
+  const KO_TICKS = 30;
+  let koTick = 0;
+  let lastTimestamp = null, simAccum = 0;
+  const SIM_STEP_MS = 40;
+
+  function drawMpFrame(timestamp) {
+    if (lastTimestamp !== null) simAccum += Math.min(timestamp - lastTimestamp, 100);
+    lastTimestamp = timestamp;
+    while (simAccum >= SIM_STEP_MS) {
+      simAccum -= SIM_STEP_MS;
+      if (tick < frames.length) tick++;
+      else if (koTick < KO_TICKS) koTick++;
+      else { simAccum = 0; break; }
+    }
+    const inSim = tick < frames.length;
+    const inKO = !inSim && koTick < KO_TICKS;
+    if (!inSim && !inKO) {
+      showMpResult(result.winA, buildA, buildB, lobbyData, uidA, nameA, nameB);
+      return;
+    }
+    const f = inSim ? frames[tick] : frames[frames.length - 1];
+    const koProgress = inKO ? (koTick + 1) / KO_TICKS : 0;
+    const lastFrame = frames[frames.length - 1];
+    const hardKoA = lastFrame.stA === 0, hardKoB = lastFrame.stB === 0;
+    const tiebreak = !hardKoA && !hardKoB;
+    const loserA = hardKoA || (tiebreak && !result.winA);
+    const loserB = hardKoB || (tiebreak && result.winA);
+    const baseRatioA = Math.min(1, f.stA / Math.max(1, maxStA));
+    const baseRatioB = Math.min(1, f.stB / Math.max(1, maxStB));
+    const ratioA = (loserA && inKO) ? baseRatioA * (1 - koProgress) : baseRatioA;
+    const ratioB = (loserB && inKO) ? baseRatioB * (1 - koProgress) : baseRatioB;
+    const healthOrbitA = R * 0.72 * (loserA && inKO ? Math.max(0, 1 - koProgress) : (baseRatioA > 0.25 ? 1 : baseRatioA / 0.25));
+    const healthOrbitB = R * 0.72 * (loserB && inKO ? Math.max(0, 1 - koProgress) : (baseRatioB > 0.25 ? 1 : baseRatioB / 0.25));
+    const baseSpeedA = (0.10 + 0.04 * ratioA) * 0.4;
+    const baseSpeedB = (0.09 + 0.04 * ratioB) * 0.4;
+    angleA += baseSpeedA; angleB -= baseSpeedB;
+    const xA = W/2 + Math.cos(angleA) * healthOrbitA;
+    const yA = H/2 + Math.sin(angleA) * healthOrbitA * 0.6;
+    const xB = W/2 + Math.cos(angleB) * healthOrbitB;
+    const yB = H/2 + Math.sin(angleB) * healthOrbitB * 0.6;
+
+    ctx.fillStyle = '#0a0f1e'; ctx.fillRect(0,0,W,H);
+    const floorGrad = ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,R);
+    floorGrad.addColorStop(0,'rgba(99,102,241,0.06)');
+    floorGrad.addColorStop(0.5,'rgba(99,102,241,0.02)');
+    floorGrad.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=floorGrad; ctx.beginPath(); ctx.arc(W/2,H/2,R,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(W/2,H/2,R,0,Math.PI*2);
+    ctx.strokeStyle='#334155'; ctx.lineWidth=2.5; ctx.stroke();
+    ctx.beginPath(); ctx.arc(W/2,H/2,R*0.35,0,Math.PI*2);
+    ctx.strokeStyle='rgba(99,102,241,0.15)'; ctx.lineWidth=1; ctx.stroke();
+
+    ctx.globalAlpha = 0.2;
+    for (let t = 1; t <= 7; t++) {
+      const ta = angleA - t * baseSpeedA;
+      ctx.beginPath(); ctx.arc(W/2+Math.cos(ta)*healthOrbitA, H/2+Math.sin(ta)*healthOrbitA*0.6, TR*0.8*((8-t)/8),0,Math.PI*2);
+      ctx.fillStyle='#6366f1'; ctx.fill();
+      const tb = angleB + t * baseSpeedB;
+      ctx.beginPath(); ctx.arc(W/2+Math.cos(tb)*healthOrbitB, H/2+Math.sin(tb)*healthOrbitB*0.6, TR*0.8*((8-t)/8),0,Math.PI*2);
+      ctx.fillStyle='#f43f5e'; ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    const radA = TR * (0.5 + 0.5 * ratioA);
+    const glowA = ctx.createRadialGradient(xA,yA,0,xA,yA,radA*2.5);
+    glowA.addColorStop(0,'rgba(99,102,241,0.4)'); glowA.addColorStop(1,'rgba(99,102,241,0)');
+    ctx.fillStyle=glowA; ctx.beginPath(); ctx.arc(xA,yA,radA*2.5,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(xA,yA,radA,0,Math.PI*2);
+    ctx.fillStyle='#6366f1'; ctx.fill(); ctx.strokeStyle='#a5b4fc'; ctx.lineWidth=2; ctx.stroke();
+    for (let i=0;i<4;i++) {
+      const a = tick*0.4+i*(Math.PI/2);
+      ctx.beginPath(); ctx.moveTo(xA,yA); ctx.lineTo(xA+Math.cos(a)*radA,yA+Math.sin(a)*radA);
+      ctx.strokeStyle='rgba(165,180,252,0.7)'; ctx.lineWidth=2; ctx.stroke();
+    }
+
+    const radB = TR * (0.5 + 0.5 * ratioB);
+    const glowB = ctx.createRadialGradient(xB,yB,0,xB,yB,radB*2.5);
+    glowB.addColorStop(0,'rgba(244,63,94,0.4)'); glowB.addColorStop(1,'rgba(244,63,94,0)');
+    ctx.fillStyle=glowB; ctx.beginPath(); ctx.arc(xB,yB,radB*2.5,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(xB,yB,radB,0,Math.PI*2);
+    ctx.fillStyle='#f43f5e'; ctx.fill(); ctx.strokeStyle='#fda4af'; ctx.lineWidth=2; ctx.stroke();
+    for (let i=0;i<4;i++) {
+      const a = -tick*0.45+i*(Math.PI/2);
+      ctx.beginPath(); ctx.moveTo(xB,yB); ctx.lineTo(xB+Math.cos(a)*radB,yB+Math.sin(a)*radB);
+      ctx.strokeStyle='rgba(253,164,175,0.7)'; ctx.lineWidth=2; ctx.stroke();
+    }
+
+    const dist = Math.hypot(xA-xB, yA-yB);
+    if (dist < (radA+radB)*2.2) {
+      const mx=(xA+xB)/2, my=(yA+yB)/2;
+      ctx.beginPath(); ctx.arc(mx,my,(radA+radB)*0.8,0,Math.PI*2);
+      ctx.strokeStyle='rgba(251,191,36,0.6)'; ctx.lineWidth=2; ctx.stroke();
+      ctx.fillStyle='#fbbf24';
+      for (let i=0;i<8;i++) {
+        const sa=(i/8)*Math.PI*2+tick*0.3, sd=8+Math.random()*18;
+        ctx.fillRect(mx+Math.cos(sa)*sd-2,my+Math.sin(sa)*sd-2,4,4);
+      }
+    }
+    if (ratioA < 0.15 && tick%4<2) {
+      ctx.strokeStyle='rgba(248,113,113,0.5)'; ctx.lineWidth=4;
+      ctx.beginPath(); ctx.arc(xA,yA,radA*1.6,0,Math.PI*2); ctx.stroke();
+    }
+    if (ratioB < 0.15 && tick%4<2) {
+      ctx.strokeStyle='rgba(248,113,113,0.5)'; ctx.lineWidth=4;
+      ctx.beginPath(); ctx.arc(xB,yB,radB*1.6,0,Math.PI*2); ctx.stroke();
+    }
+
+    const barEl = document.getElementById('mp-battle-stats-display');
+    if (barEl) {
+      const dispA = Math.round(ratioA * buildA.stats.stamina);
+      const dispB = Math.round(ratioB * buildB.stats.stamina);
+      const barColA = ratioA > 0.5 ? 'var(--indigo)' : ratioA > 0.2 ? '#f59e0b' : 'var(--red)';
+      const barColB = ratioB > 0.5 ? 'var(--rose)'   : ratioB > 0.2 ? '#f59e0b' : 'var(--red)';
+      barEl.innerHTML = `
+        <div class="battle-bar-side">
+          <div style="color:var(--indigo-l);font-weight:700">${escHtml(nameA)}</div>
+          <div style="font-size:12px;color:var(--muted)">${dispA} / ${buildA.stats.stamina} STA</div>
+          <div class="battle-bar-wrap"><div style="background:${barColA};height:100%;border-radius:4px;width:${ratioA*100}%;transition:width .1s"></div></div>
+          <div class="battle-event">${f.evA||'&nbsp;'}</div>
+        </div>
+        <div style="color:var(--dim);font-size:20px;padding-top:10px">⚔️</div>
+        <div class="battle-bar-side">
+          <div style="color:var(--rose-l);font-weight:700">${escHtml(nameB)}</div>
+          <div style="font-size:12px;color:var(--muted)">${dispB} / ${buildB.stats.stamina} STA</div>
+          <div class="battle-bar-wrap"><div style="background:${barColB};height:100%;border-radius:4px;width:${ratioB*100}%;transition:width .1s"></div></div>
+          <div class="battle-event">${f.evB||'&nbsp;'}</div>
+        </div>`;
+    }
+    mpBattleAnimTimer = requestAnimationFrame(drawMpFrame);
+  }
+  mpBattleAnimTimer = requestAnimationFrame(drawMpFrame);
+}
+
+function showMpResult(winA, buildA, buildB, lobbyData, uidA, nameA, nameB) {
+  const players = Object.entries(lobbyData.players || {});
+  const iAmPlayerA = players.length > 0 && players[0][0] === currentUser.id;
+  const iWon = (iAmPlayerA && winA) || (!iAmPlayerA && !winA);
+  const winnerName = winA ? nameA : nameB;
+  const el = document.getElementById('mp-battle-result');
+  if (el) {
+    el.innerHTML = iWon
+      ? `<div class="battle-result-banner winner-banner">🏆 ${winnerName} wins! You won!</div>`
+      : `<div class="battle-result-banner loser-banner">💀 ${winnerName} wins! Better luck next time.</div>`;
+  }
+  const doneEl = document.getElementById('mp-battle-done-btns');
+  if (doneEl) doneEl.style.display = 'flex';
+
+  // Creator writes result to Firebase
+  if (db && currentLobbyId && lobbyData.creatorId === currentUser.id) {
+    db.ref('lobbies/' + currentLobbyId).update({
+      status: 'finished',
+      winnerId: winA ? uidA : Object.keys(lobbyData.players || {})[1] || uidA
+    }).catch(() => {});
+  }
+  toast(iWon ? '🏆 Victory!' : '💀 Defeated!', iWon ? 'success' : 'error');
+}
+
+// ─── HTML escape helper ───────────────────────────────────────────────────────
+function escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Updated showPage to handle new pages ────────────────────────────────────
+const _origShowPage = showPage;
+showPage = function(name) {
+  // Unsubscribe lobby list if leaving that page
+  if (name !== 'lobby-list' && unsubLobbyList) {
+    unsubLobbyList(); unsubLobbyList = null;
+  }
+  // Unsubscribe lobby room if leaving lobby
+  if (name !== 'lobby-room' && name !== 'mp-battle') {
+    if (unsubLobbyRoom) { unsubLobbyRoom(); unsubLobbyRoom = null; }
+    if (unsubLobbyChat) { unsubLobbyChat(); unsubLobbyChat = null; }
+  }
+  if (mpBattleAnimTimer && name !== 'mp-battle') {
+    cancelAnimationFrame(mpBattleAnimTimer); mpBattleAnimTimer = null;
+  }
+
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const pageEl = document.getElementById('page-' + name);
+  if (pageEl) pageEl.classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('onclick')?.includes("'" + name + "'"));
+  });
+  renderAll();
+  if (name === 'battle') {
+    document.getElementById('battle-setup').style.display = 'block';
+    document.getElementById('battle-arena').style.display = 'none';
+    generateAI();
+  }
+  if (name === 'profile') renderProfilePage();
+  if (name === 'lobby-list') renderLobbyListPage();
+};
+
+// ─── Initialize multiplayer system ───────────────────────────────────────────
+initFirebase();
+initUser();
 </script>
 </body>
 </html>
