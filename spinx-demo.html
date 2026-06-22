@@ -946,10 +946,6 @@ function runBattleAnimation(buildA, chargeA, buildB, chargeB, wager) {
     const f = inSim ? frames[tick] : frames[frames.length - 1];
     const koProgress = inKO ? koTick / KO_TICKS : 0;
 
-    // Stamina ratios (0–1) used for visual decay — clamped so bars never go above 100%.
-    const ratioA = Math.min(1, f.stA / Math.max(1, maxStA));
-    const ratioB = Math.min(1, f.stB / Math.max(1, maxStB));
-
     // KO or tiebreak loser: either top that reached 0, or (for time-limit draws)
     // whichever has lower remaining HP.
     const lastFrame = frames[frames.length - 1];
@@ -959,9 +955,15 @@ function runBattleAnimation(buildA, chargeA, buildB, chargeB, wager) {
     const loserA = hardKoA || (tiebreak && !result.winA);
     const loserB = hardKoB || (tiebreak && result.winA);
 
+    // Stamina ratios: drain the loser's bar to 0 across the KO spiral.
+    const baseRatioA = Math.min(1, f.stA / Math.max(1, maxStA));
+    const baseRatioB = Math.min(1, f.stB / Math.max(1, maxStB));
+    const ratioA = (loserA && inKO) ? baseRatioA * (1 - koProgress) : baseRatioA;
+    const ratioB = (loserB && inKO) ? baseRatioB * (1 - koProgress) : baseRatioB;
+
     // Dead/losing top spirals inward during KO phase.
-    const healthOrbitA = R * 0.72 * (loserA && inKO ? Math.max(0, 1 - koProgress) : (ratioA > 0.25 ? 1 : ratioA / 0.25));
-    const healthOrbitB = R * 0.72 * (loserB && inKO ? Math.max(0, 1 - koProgress) : (ratioB > 0.25 ? 1 : ratioB / 0.25));
+    const healthOrbitA = R * 0.72 * (loserA && inKO ? Math.max(0, 1 - koProgress) : (baseRatioA > 0.25 ? 1 : baseRatioA / 0.25));
+    const healthOrbitB = R * 0.72 * (loserB && inKO ? Math.max(0, 1 - koProgress) : (baseRatioB > 0.25 ? 1 : baseRatioB / 0.25));
 
     // Angular speed: faster when healthy, wobbles when low hp
     const baseSpeedA = 0.10 + 0.04 * ratioA;
