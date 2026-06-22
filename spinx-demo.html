@@ -489,7 +489,8 @@ const OVERCHARGE_PENALTY   = 2;
 // range so damage (~20-200 per tick) gives 15-80 tick battles.
 const STAMINA_SCALE        = 25;
 // Damage divisor applied after the raw atk-def/2 formula.
-const DAMAGE_SCALE         = 8;
+// Higher = longer battles. Target: 60-90 ticks for glass-cannon matchups.
+const DAMAGE_SCALE         = 12;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DATA TABLES — mirror programs/spinx/src/state/spinx.rs
@@ -670,7 +671,7 @@ function simulateBattle(buildA, chargeA, buildB, chargeB, seed) {
     ? statsA.stamina >= statsB.stamina
     : last.stA > last.stB;
 
-  return { winA, frames, seed };
+  return { winA, frames, seed, initStA, initStB };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -918,30 +919,43 @@ function runBattleAnimation(buildA, chargeA, buildB, chargeB, wager) {
 
   let tick = 0;
   const frames = result.frames;
-  // maxSt is the initial HP (post charge-scaling). Frame stA/stB values live in
-  // this same scaled space, so ratios come out correct for the progress bars.
-  const maxStA = frames[0].stA;
-  const maxStB = frames[0].stB;
+  // Use the true initial HP (before any damage) as the 100% reference.
+  const maxStA = result.initStA;
+  const maxStB = result.initStB;
 
   // Each top has its own continuously-advancing angle so they orbit independently.
   let angleA = 0;
   let angleB = Math.PI; // start on opposite side
 
+  // Phase 2: knockout spiral lasts 30 ticks after the last simulation frame.
+  const KO_TICKS = 30;
+  let koTick = 0;  // counts up during knockout phase
+
   function drawFrame() {
-    if (tick >= frames.length) {
+    // ── Phase 1: simulation frames ────────────────────────────────────────────
+    const inSim = tick < frames.length;
+    // ── Phase 2: knockout animation (loser spirals to centre) ─────────────────
+    const inKO  = !inSim && koTick < KO_TICKS;
+
+    if (!inSim && !inKO) {
       showBattleResult(result.winA, buildA, buildB, wager);
       return;
     }
-    const f = frames[tick];
 
-    // Stamina ratios (0–1) used for visual decay
-    const ratioA = f.stA / Math.max(1, maxStA);
-    const ratioB = f.stB / Math.max(1, maxStB);
+    const f = inSim ? frames[tick] : frames[frames.length - 1];
+    const koProgress = inKO ? koTick / KO_TICKS : 0;
+
+    // Stamina ratios (0–1) used for visual decay — clamped so bars never go above 100%.
+    const ratioA = Math.min(1, f.stA / Math.max(1, maxStA));
+    const ratioB = Math.min(1, f.stB / Math.max(1, maxStB));
 
     // Tops orbit at ~75% of arena radius while healthy; spiral inward only
     // in the last 25% of stamina so most of the battle happens at full orbit.
-    const healthOrbitA = R * 0.72 * Math.max(0.05, ratioA > 0.25 ? 1 : ratioA / 0.25);
-    const healthOrbitB = R * 0.72 * Math.max(0.05, ratioB > 0.25 ? 1 : ratioB / 0.25);
+    // During knockout phase the dead top spirals all the way to centre.
+    const deadA = f.stA === 0;
+    const deadB = f.stB === 0;
+    const healthOrbitA = R * 0.72 * (deadA ? Math.max(0, 1 - koProgress) : (ratioA > 0.25 ? 1 : ratioA / 0.25));
+    const healthOrbitB = R * 0.72 * (deadB ? Math.max(0, 1 - koProgress) : (ratioB > 0.25 ? 1 : ratioB / 0.25));
 
     // Angular speed: faster when healthy, wobbles when low hp
     const baseSpeedA = 0.10 + 0.04 * ratioA;
@@ -1075,7 +1089,8 @@ function runBattleAnimation(buildA, chargeA, buildB, chargeB, wager) {
         <div class="battle-event">${f.evB||'&nbsp;'}</div>
       </div>`;
 
-    tick++;
+    if (inSim) tick++;
+    else if (inKO) koTick++;
     battleAnimTimer = setTimeout(drawFrame, 40);
   }
 
